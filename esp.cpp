@@ -192,7 +192,7 @@ void setup() {
   lastLDRState = lastLight < lightThreshold;
   if (lastLDRState) analogWrite(controlPin2, currentBrightnessDutyCycle);
   else analogWrite(controlPin2, 0);
-  
+
   digitalWrite(ledPin, HIGH);
 
   WiFi.config(staticIP, gateway, subnet);
@@ -222,50 +222,85 @@ void setup() {
 
 // === Loop ===
 void loop() {
+  // Always handle web client requests
   server.handleClient();
+
+  // Read the optocoupler and update its status
   int optocouplerValue = analogRead(optocouplerPin);
   previousOptocouplerStatus = optocouplerStatus;
   optocouplerStatus = (optocouplerValue < optocouplerThreshold) ? "on" : "off";
 
+  // === Main Control Logic ===
+  // Only execute control logic if the optocoupler is ON.
+  // This is a mandatory condition.
   if (optocouplerStatus == "on") {
+
+    // Check for the manual timed mode timeout
     unsigned long currentMillis = millis();
     if (currentMode == MANUAL_ON_TIMED && currentMillis >= manualTimerEnd) {
       currentMode = AUTOMATED;
-      digitalWrite(controlPin, LOW);
+      digitalWrite(controlPin, LOW); // Turn off the relay when the timer expires
+      Serial.println("Manual timer expired. Returning to automated mode.");
     }
-    if (currentMode == AUTOMATED && currentMillis - previousMillis >= interval) {
-      previousMillis = currentMillis;
-      readAndStoreSensors();
-      if (lastTemperature >= tempOn) digitalWrite(controlPin, HIGH);
-      else if (lastTemperature <= tempOff) digitalWrite(controlPin, LOW);
+
+    // Handle the control based on the current mode
+    if (currentMode == AUTOMATED) {
+      // Check if it's time to read sensors and apply temperature logic
+      if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis;
+        readAndStoreSensors(); // Read temperature and humidity
+        Serial.print("Temperature: ");
+        Serial.print(lastTemperature);
+        Serial.print(" C, Humidity: ");
+        Serial.println(lastHumidity);
+
+        if (lastTemperature >= tempOn) {
+          digitalWrite(controlPin, HIGH);
+          Serial.println("Temperature is above threshold. GPIO 6 ON.");
+        } else if (lastTemperature <= tempOff) {
+          digitalWrite(controlPin, LOW);
+          Serial.println("Temperature is below threshold. GPIO 6 OFF.");
+        }
+      }
+    } else {
+      // We are in a MANUAL mode. The relay state is managed by the web handlers.
+      // This is a safety check; the handlers already set the state.
+      digitalWrite(controlPin, HIGH);
     }
-    digitalWrite(ledPin, LOW);
-    delay(50);
-    digitalWrite(ledPin, HIGH);
   } else {
+    // === Mandatory Condition: Optocoupler is OFF ===
+    // If the optocoupler is off, turn the fan OFF, regardless of temperature.
+    digitalWrite(controlPin, LOW);
     if (optocouplerStatus != previousOptocouplerStatus) {
-      digitalWrite(controlPin, LOW);
+      Serial.println("Optocoupler is now OFF. GPIO 6 is turned OFF.");
     }
   }
 
-  // === Brightness Control Logic ===
-  // LDR logic will now run continuously regardless of manual button presses.
+  // === LED and Brightness Control Logic ===
+  // This logic is independent and always runs
+  if (optocouplerStatus == "on") {
+    // Blink LED to show activity
+    digitalWrite(ledPin, LOW);
+    delay(50);
+    digitalWrite(ledPin, HIGH);
+  }
+
   unsigned long currentLightMillis = millis();
   if (currentLightMillis - previousLightMillis >= lightInterval) {
     previousLightMillis = currentLightMillis;
     readAndStoreSensors();
     bool currentLDRState = lastLight < lightThreshold;
-    
+
     if (currentLDRState != lastLDRState) {
-        lastLDRChangeTime = currentLightMillis;
+      lastLDRChangeTime = currentLightMillis;
     }
 
     if ((currentLightMillis - lastLDRChangeTime) >= debounceDelay) {
-        if (currentLDRState) {
-            analogWrite(controlPin2, currentBrightnessDutyCycle); // Use the manually set duty cycle
-        } else {
-            analogWrite(controlPin2, 0); // Turn off if it's too bright
-        }
+      if (currentLDRState) {
+        analogWrite(controlPin2, currentBrightnessDutyCycle);
+      } else {
+        analogWrite(controlPin2, 0);
+      }
     }
     lastLDRState = currentLDRState;
   }
