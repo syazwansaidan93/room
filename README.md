@@ -27,7 +27,7 @@ Open the `api.php` file and modify the `$esp32_base_url` variable to match the l
 
 ```php
 // Set the IP address of your ESP32-C3 here.
-$esp32_base_url = "[http://192.168.1.4](http://192.168.1.4)"; 
+$esp32_base_url = "http://192.168.1.4"; 
 ```
 
 #### 4. Cloudflare Tunnel
