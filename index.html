@@ -171,7 +171,7 @@
             <div class="flex flex-col space-y-2 w-full">
                 <button id="on-perm-btn" class="control-button control-button-primary">ON (Permanent)</button>
                 <button id="on-1h-btn" class="control-button control-button-primary">ON (1 Hour)</button>
-                <button id="on-2h-btn" class="control-button control-button-primary">ON (2 Hours)</button>
+                <button id="on-30m-btn" class="control-button control-button-primary">ON (30 Minutes)</button>
                 <button id="off-btn" class="control-button control-button-danger">OFF</button>
             </div>
         </div>
@@ -210,7 +210,7 @@
         </div>
     </div>
     
-    <div class="grid grid-cols-1 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div class="card">
             <div class="card-header">Light Sensor Threshold</div>
             <div class="w-full flex flex-col space-y-4">
@@ -219,6 +219,16 @@
                     <input type="number" id="light-threshold-input" class="text-input w-2/3">
                 </div>
                 <button id="set-light-threshold-btn" class="control-button control-button-primary">Set Threshold</button>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header">Night LED Debounce Delay</div>
+            <div class="w-full flex flex-col space-y-4">
+                <div class="flex items-center space-x-2">
+                    <label for="debounce-delay-input" class="w-1/3 text-gray-600">Delay (ms)</label>
+                    <input type="number" id="debounce-delay-input" class="text-input w-2/3">
+                </div>
+                <button id="set-debounce-delay-btn" class="control-button control-button-primary">Set Delay</button>
             </div>
         </div>
     </div>
@@ -275,8 +285,8 @@
             }
 
             if (document.activeElement.id !== 'main-led-slider') {
-                document.getElementById("main-led-slider").value = (data.main_led_brightness_level * 2.55).toFixed(0);
-                document.getElementById("main-led-brightness-display").textContent = `${(data.main_led_brightness_level * 2.55).toFixed(0)}%`;
+                document.getElementById("main-led-slider").value = (data.main_led_brightness_level).toFixed(0);
+                document.getElementById("main-led-brightness-display").textContent = `${(data.main_led_brightness_level / 2.55).toFixed(0)}%`;
             }
 
             if (document.activeElement.id !== 'temp-on-input') {
@@ -289,6 +299,10 @@
             
             if (document.activeElement.id !== 'light-threshold-input') {
                  document.getElementById("light-threshold-input").value = data.light_threshold;
+            }
+            
+            if (document.activeElement.id !== 'debounce-delay-input') {
+                document.getElementById("debounce-delay-input").value = data.debounce_delay_ms;
             }
 
             // Update status to online
@@ -320,7 +334,7 @@
     // Event listeners for buttons
     document.getElementById("on-perm-btn").addEventListener("click", () => sendCommand("/on-perm"));
     document.getElementById("on-1h-btn").addEventListener("click", () => sendCommand("/on-1h"));
-    document.getElementById("on-2h-btn").addEventListener("click", () => sendCommand("/on-2h"));
+    document.getElementById("on-30m-btn").addEventListener("click", () => sendCommand("/on-30m"));
     document.getElementById("off-btn").addEventListener("click", () => sendCommand("/off"));
     document.getElementById("toggle-master-btn").addEventListener("click", () => sendCommand("/toggle-master-switch"));
     document.getElementById("toggle-main-led-btn").addEventListener("click", () => sendCommand("/toggle-main-led"));
@@ -363,6 +377,13 @@
         const value = document.getElementById("light-threshold-input").value;
         if (value) {
             sendCommand("/set-light-threshold", value);
+        }
+    });
+
+    document.getElementById("set-debounce-delay-btn").addEventListener("click", () => {
+        const value = document.getElementById("debounce-delay-input").value;
+        if (value) {
+            sendCommand("/set-debounce-delay", value);
         }
     });
 
