@@ -179,7 +179,7 @@
             <div class="card-header">Main LED</div>
             <button id="toggle-main-led-btn" class="control-button control-button-secondary w-full mb-4">Toggle Main LED</button>
             <div class="slider-container flex items-center space-x-4 w-full">
-                <input type="range" min="0" max="255" value="255" id="main-led-slider" class="slider-input">
+                <input type="range" min="0" max="8191" value="8191" id="main-led-slider" class="slider-input">
                 <span id="main-led-brightness-display" class="w-12 text-center text-gray-600">100%</span>
             </div>
         </div>
@@ -189,7 +189,7 @@
         <div class="card">
             <div class="card-header">Night LED Brightness</div>
             <div class="slider-container flex items-center space-x-4 w-full">
-                <input type="range" min="0" max="255" value="128" id="night-led-slider" class="slider-input">
+                <input type="range" min="0" max="8191" value="4096" id="night-led-slider" class="slider-input">
                 <span id="night-led-brightness-display" class="w-12 text-center text-gray-600">50%</span>
             </div>
             <p class="text-xs text-gray-500 mt-2">Note: Only active when light is below threshold.</p>
@@ -239,6 +239,7 @@
     const statusMessageEl = document.getElementById("status-message");
     const toggleMasterBtn = document.getElementById("toggle-master-btn");
     const toggleMainLedBtn = document.getElementById("toggle-main-led-btn");
+    const sliderMaxValue = 8191;
 
     async function fetchData() {
         try {
@@ -280,13 +281,15 @@
 
             // Update settings UI with current values, but only if they are not being edited
             if (document.activeElement.id !== 'night-led-slider') {
-                document.getElementById("night-led-slider").value = (data.ldr_brightness_level * 2.55).toFixed(0);
-                document.getElementById("night-led-brightness-display").textContent = `${data.ldr_brightness_level}%`;
+                const sliderValue = (data.ldr_brightness_level / 100) * sliderMaxValue;
+                document.getElementById("night-led-slider").value = sliderValue.toFixed(0);
+                document.getElementById("night-led-brightness-display").textContent = `${data.ldr_brightness_level.toFixed(0)}%`;
             }
 
             if (document.activeElement.id !== 'main-led-slider') {
-                document.getElementById("main-led-slider").value = (data.main_led_brightness_level).toFixed(0);
-                document.getElementById("main-led-brightness-display").textContent = `${(data.main_led_brightness_level / 2.55).toFixed(0)}%`;
+                const sliderValue = (data.main_led_brightness_level / 100) * sliderMaxValue;
+                document.getElementById("main-led-slider").value = sliderValue.toFixed(0);
+                document.getElementById("main-led-brightness-display").textContent = `${data.main_led_brightness_level.toFixed(0)}%`;
             }
 
             if (document.activeElement.id !== 'temp-on-input') {
@@ -347,7 +350,7 @@
         sendCommand("/set-brightness", e.target.value);
     });
     document.getElementById("night-led-slider").addEventListener("input", (e) => {
-        const percentage = (e.target.value / 2.55).toFixed(0);
+        const percentage = (e.target.value / sliderMaxValue * 100).toFixed(0);
         document.getElementById("night-led-brightness-display").textContent = `${percentage}%`;
     });
 
@@ -358,7 +361,7 @@
         sendCommand("/set-main-led-brightness", e.target.value);
     });
     document.getElementById("main-led-slider").addEventListener("input", (e) => {
-        const percentage = (e.target.value / 2.55).toFixed(0);
+        const percentage = (e.target.value / sliderMaxValue * 100).toFixed(0);
         document.getElementById("main-led-brightness-display").textContent = `${percentage}%`;
     });
 
@@ -367,8 +370,6 @@
         const tempOff = document.getElementById("temp-off-input").value;
         if (tempOn && tempOff) {
             sendCommand("/set-temp-on", tempOn);
-            // This is a bit of a hack since we can't send two commands at once easily.
-            // In a real scenario, we might have a single endpoint for this.
             setTimeout(() => sendCommand("/set-temp-off", tempOff), 100);
         }
     });
