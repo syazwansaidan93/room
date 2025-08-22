@@ -1,56 +1,42 @@
 <?php
+    // Set the content type header to application/json
+    header('Content-Type: application/json');
 
-// =========================================================================
-// Configuration
-// =========================================================================
-// Set the IP address of your ESP32-C3 here.
-// Make sure to include the http:// part.
-// IMPORTANT: This IP should be the address of the ESP32, not the Orange Pi.
-$esp32_base_url = "http://192.168.1.4";
+    // The local IP address of your ESP32. This value is now stored securely on your server.
+    $esp32_base_url = "http://192.168.1.4";
 
+    // Get the requested endpoint from the URL query string.
+    $endpoint = isset($_GET['endpoint']) ? $_GET['endpoint'] : null;
 
-// =========================================================================
-// Script Logic
-// =========================================================================
+    // If no endpoint is provided, return an error.
+    if ($endpoint === null) {
+        http_response_code(400); // Bad Request
+        echo json_encode(["error" => "Missing endpoint parameter"]);
+        exit;
+    }
 
-// Set a content type header to ensure the browser and client-side JavaScript
-// correctly interpret the response as JSON or plain text.
-// This is important for returning data from the ESP32.
-header('Content-Type: application/json');
+    // Get the optional 'value' from the query string for settings.
+    $value = isset($_GET['value']) ? $_GET['value'] : null;
 
-// Get the requested path from the URL. This is passed in the query string.
-$path = isset($_GET['path']) ? $_GET['path'] : '/data';
+    // Construct the full URL to the ESP32.
+    $full_url = $esp32_base_url . $endpoint;
 
-// Get the 'value' parameter if it exists. This is used for commands like setting brightness.
-$value = isset($_GET['value']) ? $_GET['value'] : null;
+    if ($value !== null) {
+        $full_url .= "?value=" . urlencode($value);
+    }
 
-// Construct the full URL to the ESP32.
-// We append the path and value to the base URL.
-$full_url = $esp32_base_url . $path;
+    // Use file_get_contents to fetch data from the ESP32.
+    // The '@' symbol suppresses warnings, which is useful for avoiding errors
+    // when the ESP32 might be offline, but you should handle it with a check.
+    $response = @file_get_contents($full_url);
 
-if ($value !== null) {
-    // If a value is provided, add it as a query parameter.
-    // We use http_build_query to ensure it's properly formatted.
-    $full_url .= '?' . http_build_query(['value' => $value]);
-}
-
-// Attempt to fetch the content from the ESP32.
-// Use file_get_contents for a simple GET request.
-$response = @file_get_contents($full_url);
-
-// Check if the request was successful.
-if ($response === false) {
-    // If the request fails, return a JSON error message.
-    // This allows the front-end to detect that the ESP32 is offline or the request failed.
-    http_response_code(503); // Service Unavailable
-    echo json_encode([
-        'error' => 'Failed to connect to ESP32.',
-        'details' => error_get_last() // Get the last PHP error for debugging.
-    ]);
-} else {
-    // If successful, return the response from the ESP32 directly to the browser.
-    // This assumes the ESP32 returns valid JSON or plain text.
-    echo $response;
-}
-
+    // Check if the request was successful.
+    if ($response === FALSE) {
+        // If the request failed, return a 503 Service Unavailable error.
+        http_response_code(503);
+        echo json_encode(["error" => "Could not connect to ESP32."]);
+    } else {
+        // If the request was successful, pass the ESP32's response back to the client.
+        echo $response;
+    }
 ?>
