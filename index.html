@@ -3,395 +3,249 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Room Controller</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Bilik</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
-            color: #333;
-        }
-        .container {
-            max-width: 800px;
-        }
-        .card {
-            background-color: #ffffff;
-            border-radius: 1.5rem;
-            padding: 1.5rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .card-header {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            color: #1f2937;
-        }
-        .card-value {
-            font-size: 2.25rem;
-            font-weight: 600;
-            color: #4b5563;
-        }
-        .control-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        }
-        .control-button {
-            padding: 0.75rem 1.5rem;
-            border-radius: 9999px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        .control-button:hover {
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            transform: translateY(-2px);
-        }
-        .control-button:active {
-            transform: scale(0.95);
-        }
-        .control-button-primary {
-            background-color: #3b82f6;
-            color: white;
-        }
-        .control-button-danger {
-            background-color: #ef4444;
-            color: white;
-        }
-        .control-button-secondary {
-            background-color: #9ca3af;
-            color: white;
-        }
-        .slider-container {
-            width: 100%;
-        }
-        .slider-input {
-            width: 100%;
-            height: 8px;
-            -webkit-appearance: none;
-            background: #d1d5db;
-            outline: none;
-            border-radius: 9999px;
-            transition: opacity .2s;
-        }
-        .slider-input::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 24px;
-            height: 24px;
-            background: #3b82f6;
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-        .slider-input::-moz-range-thumb {
-            width: 24px;
-            height: 24px;
-            background: #3b82f6;
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-        .text-input {
-            border-radius: 9999px;
-            border: 1px solid #d1d5db;
-            padding: 0.5rem 1rem;
-            text-align: center;
-        }
-        .status-pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.75rem;
-        }
-        .status-pill.on {
-            background-color: #d1fae5;
-            color: #047857;
-        }
-        .status-pill.off {
-            background-color: #fee2e2;
-            color: #b91c1c;
-        }
-        .online-status {
-            font-weight: 600;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-        }
-        .online-status.online {
-            color: #16a34a; /* Tailwind 'green-600' */
-        }
-        .online-status.offline {
-            color: #dc2626; /* Tailwind 'red-600' */
+            background-color: #0f172a;
+            color: #e2e8f0;
         }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+<body class="p-4 sm:p-8">
 
-<div class="container bg-white p-8 rounded-[2rem] shadow-xl w-full">
-    <div class="text-center mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Room Controller</h1>
-        <p class="text-gray-500 mt-2">Status: <span id="status-message" class="online-status">Offline</span></p>
-    </div>
+    <div class="max-w-md mx-auto bg-slate-800 rounded-2xl shadow-xl p-6 space-y-6">
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="card">
-            <div class="card-header">Temperature</div>
-            <div class="card-value" id="temp-value">--.-°C</div>
-        </div>
-        <div class="card">
-            <div class="card-header">Humidity</div>
-            <div class="card-value" id="humidity-value">--%</div>
-        </div>
-        <div class="card">
-            <div class="card-header">Light</div>
-            <div class="card-value" id="light-value">--</div>
-        </div>
-    </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div class="card">
-            <div class="card-header">Master Switch</div>
-            <button id="toggle-master-btn" class="control-button control-button-secondary w-full">Toggle Master</button>
-        </div>
-        <div class="card">
-            <div class="card-header">Fan Status</div>
-            <div class="w-full text-center mb-4">
-                <span id="fan-status" class="status-pill off">OFF</span>
-                <p class="text-sm text-gray-500 mt-2" id="control-mode-display">Automated</p>
+        <!-- Status and Sensor Data -->
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Temperature</p>
+                <p id="temperature" class="text-2xl font-bold text-green-300 mt-1">-- °C</p>
             </div>
-            <div class="flex flex-col space-y-2 w-full">
-                <button id="on-perm-btn" class="control-button control-button-primary">ON (Permanent)</button>
-                <button id="on-1h-btn" class="control-button control-button-primary">ON (1 Hour)</button>
-                <button id="on-30m-btn" class="control-button control-button-primary">ON (30 Minutes)</button>
-                <button id="off-btn" class="control-button control-button-danger">OFF</button>
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Humidity</p>
+                <p id="humidity" class="text-2xl font-bold text-green-300 mt-1">-- %</p>
+            </div>
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Light</p>
+                <p id="light" class="text-2xl font-bold text-green-300 mt-1">-- Lux</p>
+            </div>
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Fan Status</p>
+                <p id="fan_status" class="text-2xl font-bold text-green-300 mt-1">--</p>
+            </div>
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Control Mode</p>
+                <p id="control_mode" class="text-lg font-bold text-yellow-300 mt-1">--</p>
+            </div>
+            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                <p class="text-sm text-slate-300">Uptime</p>
+                <p id="uptime" class="text-lg font-bold text-slate-300 mt-1">--</p>
             </div>
         </div>
-        <div class="card">
-            <div class="card-header">Main LED</div>
-            <button id="toggle-main-led-btn" class="control-button control-button-secondary w-full mb-4">Toggle Main LED</button>
-            <div class="slider-container flex items-center space-x-4 w-full">
-                <input type="range" min="0" max="8191" value="8191" id="main-led-slider" class="slider-input">
-                <span id="main-led-brightness-display" class="w-12 text-center text-gray-600">100%</span>
-            </div>
-        </div>
-    </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div class="card">
-            <div class="card-header">Night LED Brightness</div>
-            <div class="slider-container flex items-center space-x-4 w-full">
-                <input type="range" min="0" max="8191" value="4096" id="night-led-slider" class="slider-input">
-                <span id="night-led-brightness-display" class="w-12 text-center text-gray-600">50%</span>
-            </div>
-            <p class="text-xs text-gray-500 mt-2">Note: Only active when light is below threshold.</p>
-        </div>
-        <div class="card">
-            <div class="card-header">Temperature Thresholds</div>
-            <div class="w-full flex flex-col space-y-4">
-                <div class="flex items-center space-x-2">
-                    <label for="temp-on-input" class="w-1/3 text-gray-600">ON Temp (°C)</label>
-                    <input type="number" step="0.5" id="temp-on-input" class="text-input w-2/3">
+        <!-- Master Switch and Main LED -->
+        <div class="pt-4 border-t border-slate-700">
+            <h2 class="text-xl font-semibold text-slate-300 mb-4">Master Controls</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg flex flex-col items-center">
+                    <p class="text-sm text-slate-300 mb-2">Master Switch</p>
+                    <button id="toggle-master-switch-btn" class="w-full text-center py-2 px-4 rounded-full font-bold transition duration-300 ease-in-out text-white">Toggle</button>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <label for="temp-off-input" class="w-1/3 text-gray-600">OFF Temp (°C)</label>
-                    <input type="number" step="0.5" id="temp-off-input" class="text-input w-2/3">
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg flex flex-col items-center">
+                    <p class="text-sm text-slate-300 mb-2">Main LED</p>
+                    <button id="toggle-main-led-btn" class="w-full text-center py-2 px-4 rounded-full font-bold transition duration-300 ease-in-out text-white">Toggle</button>
                 </div>
-                <button id="set-temp-btn" class="control-button control-button-primary">Set Temperatures</button>
             </div>
         </div>
+
+        <!-- Fan Controls -->
+        <div class="pt-4 border-t border-slate-700">
+            <h2 class="text-xl font-semibold text-slate-300 mb-4">Fan Control</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <button onclick="sendControl('/on-perm')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On</button>
+                <button onclick="sendControl('/off')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">Off</button>
+                <button onclick="sendControl('/on-30m')" class="bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On (30m)</button>
+                <button onclick="sendControl('/on-1h')" class="bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On (1h)</button>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div class="pt-4 border-t border-slate-700">
+            <h2 class="text-xl font-semibold text-slate-300 mb-4">Settings</h2>
+            <div class="space-y-4">
+                <!-- Temperature Settings -->
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <h3 class="font-medium text-slate-200">Temperature Thresholds</h3>
+                    <p class="text-sm text-slate-400 mt-1">Current On: <span id="tempOnValue" class="text-green-300">--</span>°C | Current Off: <span id="tempOffValue" class="text-red-300">--</span>°C</p>
+                    <div class="flex items-center space-x-2 mt-2">
+                        <input type="number" id="tempOnInput" placeholder="Temp On" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
+                        <button onclick="setThreshold('/set-temp-on', 'tempOnInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
+                    </div>
+                    <div class="flex items-center space-x-2 mt-2">
+                        <input type="number" id="tempOffInput" placeholder="Temp Off" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
+                        <button onclick="setThreshold('/set-temp-off', 'tempOffInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
+                    </div>
+                </div>
+
+                <!-- Light Settings -->
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <h3 class="font-medium text-slate-200">Light and Brightness</h3>
+                    <p class="text-sm text-slate-400 mt-1">Current Threshold: <span id="lightThresholdValue" class="text-green-300">--</span> Lux</p>
+                    <div class="flex items-center space-x-2 mt-2">
+                        <input type="number" id="lightThresholdInput" placeholder="Light Threshold" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
+                        <button onclick="setThreshold('/set-light-threshold', 'lightThresholdInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
+                    </div>
+
+                    <!-- Debounce Delay Section -->
+                    <p class="text-sm text-slate-400 mt-4">Current Debounce Delay: <span id="debounceDelayValue" class="text-green-300">--</span> ms</p>
+                    <div class="flex items-center space-x-2 mt-2">
+                        <input type="number" id="debounceDelayInput" placeholder="Debounce Delay (ms)" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
+                        <button onclick="setThreshold('/set-debounce-delay', 'debounceDelayInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
+                    </div>
+
+                    <div class="mt-4">
+                        <label for="nightLedSlider" class="block text-sm text-slate-300">Night LED Brightness</label>
+                        <input type="range" id="nightLedSlider" min="0" max="8191" value="4096" class="w-full mt-2">
+                        <button onclick="setBrightness('/set-brightness', 'nightLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set Night LED</button>
+                    </div>
+                    <div class="mt-4">
+                        <label for="mainLedSlider" class="block text-sm text-slate-300">Main LED Brightness</label>
+                        <input type="range" id="mainLedSlider" min="0" max="8191" value="8191" class="w-full mt-2">
+                        <button onclick="setBrightness('/set-main-led-brightness', 'mainLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set Main LED</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
-    
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="card">
-            <div class="card-header">Light Sensor Threshold</div>
-            <div class="w-full flex flex-col space-y-4">
-                <div class="flex items-center space-x-2">
-                    <label for="light-threshold-input" class="w-1/3 text-gray-600">Threshold Value</label>
-                    <input type="number" id="light-threshold-input" class="text-input w-2/3">
-                </div>
-                <button id="set-light-threshold-btn" class="control-button control-button-primary">Set Threshold</button>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-header">Night LED Debounce Delay</div>
-            <div class="w-full flex flex-col space-y-4">
-                <div class="flex items-center space-x-2">
-                    <label for="debounce-delay-input" class="w-1/3 text-gray-600">Delay (ms)</label>
-                    <input type="number" id="debounce-delay-input" class="text-input w-2/3">
-                </div>
-                <button id="set-debounce-delay-btn" class="control-button control-button-primary">Set Delay</button>
-            </div>
-        </div>
-    </div>
-</div>
 
-<script>
-    const baseURL = 'api.php';
-    const statusMessageEl = document.getElementById("status-message");
-    const toggleMasterBtn = document.getElementById("toggle-master-btn");
-    const toggleMainLedBtn = document.getElementById("toggle-main-led-btn");
-    const sliderMaxValue = 8191;
+    <script>
+        const proxyBaseUrl = "/api.php";
 
-    async function fetchData() {
-        try {
-            const response = await fetch(`${baseURL}?path=/data`);
-            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-            const data = await response.json();
-            
-            // Update sensor readings
-            document.getElementById("temp-value").textContent = `${data.temperature}°C`;
-            document.getElementById("humidity-value").textContent = `${data.humidity}%`;
-            document.getElementById("light-value").textContent = data.light;
+        const uiElements = {
+            temperature: document.getElementById("temperature"),
+            humidity: document.getElementById("humidity"),
+            light: document.getElementById("light"),
+            fan_status: document.getElementById("fan_status"),
+            control_mode: document.getElementById("control_mode"),
+            uptime: document.getElementById("uptime"),
+            toggleMasterSwitchBtn: document.getElementById("toggle-master-switch-btn"),
+            toggleMainLedBtn: document.getElementById("toggle-main-led-btn"),
+            tempOnValue: document.getElementById("tempOnValue"),
+            tempOffValue: document.getElementById("tempOffValue"),
+            lightThresholdValue: document.getElementById("lightThresholdValue"),
+            debounceDelayValue: document.getElementById("debounceDelayValue")
+        };
 
-            // Update status indicators
-            const fanStatusEl = document.getElementById("fan-status");
-            fanStatusEl.textContent = data.gpio_status.toUpperCase();
-            fanStatusEl.className = `status-pill ${data.gpio_status === 'on' ? 'on' : 'off'}`;
-            
-            // Update master switch button class based on state
-            if (data.master_switch_state === 'on') {
-                toggleMasterBtn.classList.add('control-button-primary');
-                toggleMasterBtn.classList.remove('control-button-secondary');
+        async function fetchData() {
+            try {
+                const response = await fetch(`${proxyBaseUrl}?endpoint=/data`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                updateUI(data);
+            } catch (error) {
+                console.error("Could not fetch data:", error);
+                for (const key in uiElements) {
+                    if (uiElements[key] && key !== 'toggleMasterSwitchBtn' && key !== 'toggleMainLedBtn' && uiElements[key].tagName !== 'INPUT') {
+                        uiElements[key].textContent = "Offline";
+                    }
+                }
+            }
+        }
+
+        function updateUI(data) {
+            uiElements.temperature.textContent = `${data.temperature}°C`;
+            uiElements.humidity.textContent = `${data.humidity}%`;
+            uiElements.light.textContent = `${data.light} Lux`;
+            uiElements.fan_status.textContent = data.gpio_status === "on" ? "ON" : "OFF";
+            uiElements.fan_status.classList.toggle('text-green-300', data.gpio_status === "on");
+            uiElements.fan_status.classList.toggle('text-red-300', data.gpio_status === "off");
+            uiElements.control_mode.textContent = data.control_mode;
+            uiElements.uptime.textContent = `${Math.floor(data.uptime_seconds / 60)} min`;
+
+            uiElements.tempOnValue.textContent = data.temp_on_threshold;
+            uiElements.tempOffValue.textContent = data.temp_off_threshold;
+            uiElements.lightThresholdValue.textContent = data.light_threshold;
+            uiElements.debounceDelayValue.textContent = data.debounce_delay_ms;
+
+            const masterSwitchBtn = uiElements.toggleMasterSwitchBtn;
+            masterSwitchBtn.classList.remove('bg-rose-500', 'hover:bg-rose-600', 'active:bg-rose-700', 'bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
+            if (data.master_switch_state === "on") {
+                masterSwitchBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
             } else {
-                toggleMasterBtn.classList.add('control-button-secondary');
-                toggleMasterBtn.classList.remove('control-button-primary');
+                masterSwitchBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
             }
-            
-            // Update main LED button class and text based on state
-            if (data.main_led_status === 'on') {
-                toggleMainLedBtn.classList.add('control-button-primary');
-                toggleMainLedBtn.classList.remove('control-button-secondary');
-                toggleMainLedBtn.textContent = 'Turn OFF';
+
+            const mainLedBtn = uiElements.toggleMainLedBtn;
+            mainLedBtn.classList.remove('bg-sky-500', 'hover:bg-sky-600', 'active:bg-sky-700', 'bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700', 'bg-slate-400', 'hover:bg-slate-500', 'active:bg-slate-600');
+            if (data.master_switch_state === "on") {
+                if (data.main_led_status === "on") {
+                    mainLedBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
+                } else {
+                    mainLedBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
+                }
             } else {
-                toggleMainLedBtn.classList.add('control-button-secondary');
-                toggleMainLedBtn.classList.remove('control-button-primary');
-                toggleMainLedBtn.textContent = 'Turn ON';
+                mainLedBtn.classList.add('bg-slate-400', 'hover:bg-slate-500', 'active:bg-slate-600');
             }
-
-            document.getElementById("control-mode-display").textContent = data.control_mode;
-
-            // Update settings UI with current values, but only if they are not being edited
-            if (document.activeElement.id !== 'night-led-slider') {
-                const sliderValue = (data.ldr_brightness_level / 100) * sliderMaxValue;
-                document.getElementById("night-led-slider").value = sliderValue.toFixed(0);
-                document.getElementById("night-led-brightness-display").textContent = `${data.ldr_brightness_level.toFixed(0)}%`;
-            }
-
-            if (document.activeElement.id !== 'main-led-slider') {
-                const sliderValue = (data.main_led_brightness_level / 100) * sliderMaxValue;
-                document.getElementById("main-led-slider").value = sliderValue.toFixed(0);
-                document.getElementById("main-led-brightness-display").textContent = `${data.main_led_brightness_level.toFixed(0)}%`;
-            }
-
-            if (document.activeElement.id !== 'temp-on-input') {
-                 document.getElementById("temp-on-input").value = data.temp_on_threshold;
-            }
-
-            if (document.activeElement.id !== 'temp-off-input') {
-                 document.getElementById("temp-off-input").value = data.temp_off_threshold;
-            }
-            
-            if (document.activeElement.id !== 'light-threshold-input') {
-                 document.getElementById("light-threshold-input").value = data.light_threshold;
-            }
-            
-            if (document.activeElement.id !== 'debounce-delay-input') {
-                document.getElementById("debounce-delay-input").value = data.debounce_delay_ms;
-            }
-
-            // Update status to online
-            statusMessageEl.textContent = "Online";
-            statusMessageEl.classList.remove('offline');
-            statusMessageEl.classList.add('online');
-
-        } catch (error) {
-            console.error('Fetch error:', error);
-            // Update status to offline on error
-            statusMessageEl.textContent = "Offline";
-            statusMessageEl.classList.remove('online');
-            statusMessageEl.classList.add('offline');
         }
-    }
 
-    async function sendCommand(endpoint, value = null) {
-        try {
-            const url = value !== null ? `${baseURL}?path=${endpoint}&value=${value}` : `${baseURL}?path=${endpoint}`;
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-            await response.text();
-            fetchData(); // Refresh data after sending command
-        } catch (error) {
-            console.error('Command failed:', error);
+        async function sendControl(endpoint) {
+            try {
+                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                fetchData();
+            } catch (error) {
+                console.error("Could not send command:", error);
+            }
         }
-    }
 
-    // Event listeners for buttons
-    document.getElementById("on-perm-btn").addEventListener("click", () => sendCommand("/on-perm"));
-    document.getElementById("on-1h-btn").addEventListener("click", () => sendCommand("/on-1h"));
-    document.getElementById("on-30m-btn").addEventListener("click", () => sendCommand("/on-30m"));
-    document.getElementById("off-btn").addEventListener("click", () => sendCommand("/off"));
-    document.getElementById("toggle-master-btn").addEventListener("click", () => sendCommand("/toggle-master-switch"));
-    document.getElementById("toggle-main-led-btn").addEventListener("click", () => sendCommand("/toggle-main-led"));
-
-    // Event listeners for sliders and inputs
-    document.getElementById("night-led-slider").addEventListener("mouseup", (e) => {
-        sendCommand("/set-brightness", e.target.value);
-    });
-    document.getElementById("night-led-slider").addEventListener("touchend", (e) => {
-        sendCommand("/set-brightness", e.target.value);
-    });
-    document.getElementById("night-led-slider").addEventListener("input", (e) => {
-        const percentage = (e.target.value / sliderMaxValue * 100).toFixed(0);
-        document.getElementById("night-led-brightness-display").textContent = `${percentage}%`;
-    });
-
-    document.getElementById("main-led-slider").addEventListener("mouseup", (e) => {
-        sendCommand("/set-main-led-brightness", e.target.value);
-    });
-    document.getElementById("main-led-slider").addEventListener("touchend", (e) => {
-        sendCommand("/set-main-led-brightness", e.target.value);
-    });
-    document.getElementById("main-led-slider").addEventListener("input", (e) => {
-        const percentage = (e.target.value / sliderMaxValue * 100).toFixed(0);
-        document.getElementById("main-led-brightness-display").textContent = `${percentage}%`;
-    });
-
-    document.getElementById("set-temp-btn").addEventListener("click", () => {
-        const tempOn = document.getElementById("temp-on-input").value;
-        const tempOff = document.getElementById("temp-off-input").value;
-        if (tempOn && tempOff) {
-            sendCommand("/set-temp-on", tempOn);
-            setTimeout(() => sendCommand("/set-temp-off", tempOff), 100);
+        async function setThreshold(endpoint, inputId) {
+            const value = document.getElementById(inputId).value;
+            if (!value) return;
+            try {
+                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}&value=${value}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                fetchData();
+            } catch (error) {
+                console.error("Could not set value:", error);
+            }
         }
-    });
 
-    document.getElementById("set-light-threshold-btn").addEventListener("click", () => {
-        const value = document.getElementById("light-threshold-input").value;
-        if (value) {
-            sendCommand("/set-light-threshold", value);
+        async function setBrightness(endpoint, sliderId) {
+            const value = document.getElementById(sliderId).value;
+            try {
+                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}&value=${value}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                fetchData();
+            } catch (error) {
+                console.error("Could not set brightness:", error);
+            }
         }
-    });
 
-    document.getElementById("set-debounce-delay-btn").addEventListener("click", () => {
-        const value = document.getElementById("debounce-delay-input").value;
-        if (value) {
-            sendCommand("/set-debounce-delay", value);
-        }
-    });
+        uiElements.toggleMasterSwitchBtn.addEventListener('click', () => {
+            sendControl('/toggle-master-switch');
+        });
 
-    // Initial data fetch and set up interval
-    fetchData();
-    setInterval(fetchData, 1000); // Poll every 1 second
-</script>
+        uiElements.toggleMainLedBtn.addEventListener('click', () => {
+            sendControl('/toggle-main-led');
+        });
 
+        fetchData();
+        setInterval(fetchData, 1000);
+    </script>
 </body>
 </html>
