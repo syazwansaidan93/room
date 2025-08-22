@@ -6,10 +6,12 @@
 #include "driver/ledc.h"
 #include "HTTPClient.h"
 
+// DHT Sensor Pin and Type
 #define DHTPIN 4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
+// Pin Definitions
 const int fanrelay = 6;
 const int lightsensor = 2;
 const int nightled = 7;
@@ -17,6 +19,7 @@ const int mainledsw = 0;
 const int proximitysw = 3;
 const int mainled = 1;
 
+// Debounce and Sensor Reading Variables
 int currentTouchValue = 0;
 int lastTouchValue = 0;
 int currentProximityValue = 0;
@@ -24,6 +27,14 @@ int lastProximityValue = 0;
 
 int lightThreshold = 2350;
 
+// Software Averaging for Light Sensor
+const int NUM_LDR_READINGS = 100;
+int ldrReadings[NUM_LDR_READINGS];
+int ldrReadIndex = 0;
+long ldrTotal = 0;
+int ldrAverage = 0;
+
+// LEDC (PWM) Configuration for Night LED
 const ledc_mode_t ledcMode = LEDC_LOW_SPEED_MODE;
 const ledc_timer_bit_t ledcResolution = LEDC_TIMER_13_BIT;
 const int ledcMaxValue = 8191;
@@ -34,17 +45,21 @@ const ledc_channel_t ledcChannel_ldr = LEDC_CHANNEL_0;
 int ledcBaseFreq = 5000;
 int currentBrightnessDutyCycle = 4096;
 
+// LEDC (PWM) Configuration for Main LED
 const ledc_timer_t ledcTimer_mainLed = LEDC_TIMER_1;
 const ledc_channel_t ledcChannel_mainLed = LEDC_CHANNEL_1;
 int mainLedBaseFreq = 5000;
 int mainLedBrightnessDutyCycle = 8191;
 
+// Temperature and Humidity Offsets
 const float tempOffset = -0.1;
 const float humidityOffset = 6.0;
 
+// Fan Control Thresholds
 float tempOn = 29.0;
 float tempOff = 28.5;
 
+// WiFi Configuration
 const char* ssid = "wifi_slow";
 IPAddress staticIP(192, 168, 1, 4);
 IPAddress gateway(192, 168, 1, 1);
@@ -53,11 +68,15 @@ IPAddress subnet(255, 255, 255, 0);
 WebServer server(80);
 Preferences preferences;
 
-unsigned long previousSensorMillis = 0;
-const long sensorInterval = 10000;
+// Timers for non-blocking operations
+unsigned long previousDHTMillis = 0;
+const long dhtInterval = 5000;
+unsigned long previousLDRMillis = 0;
+const long ldrInterval = 20; // Read every 20ms for a 2s average
 unsigned long lastLDRChangeTime = 0;
 long debounceDelay = 50;
 
+// Sensor Data Storage
 float lastHumidity = 0;
 float lastTemperature = 0;
 int lastLight = 0;
@@ -66,21 +85,34 @@ bool mainLedManualState = false;
 bool proximityManualState = false;
 bool lastFanState = false;
 
+// Fan Control Mode
 enum ControlMode { AUTOMATED, MANUAL_ON_PERMANENT, MANUAL_ON_TIMED };
 ControlMode currentMode = AUTOMATED;
 unsigned long manualTimerEnd = 0;
 
-void readSensors() {
+void readDHT() {
   float h = dht.readHumidity();
   float t = dht.readTemperature();
-
   if (isnan(h) || isnan(t)) {
     return;
   }
-
   lastHumidity = h + humidityOffset;
   lastTemperature = t + tempOffset;
-  lastLight = analogRead(lightsensor);
+}
+
+void updateLdrAverage() {
+  // Read and average light sensor
+  ldrTotal = ldrTotal - ldrReadings[ldrReadIndex];
+  ldrReadings[ldrReadIndex] = analogRead(lightsensor);
+  ldrTotal = ldrTotal + ldrReadings[ldrReadIndex];
+  ldrReadIndex = ldrReadIndex + 1;
+
+  if (ldrReadIndex >= NUM_LDR_READINGS) {
+    ldrReadIndex = 0;
+  }
+  
+  ldrAverage = ldrTotal / NUM_LDR_READINGS;
+  lastLight = ldrAverage;
 }
 
 void handleOn() {
@@ -139,18 +171,14 @@ void handleSetBrightness() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("value")) {
     int requestedValue = server.arg("value").toInt();
-    // If the requested value is 0, turn the LED off but don't save 0 as the brightness.
-    // Instead, save a minimal value to ensure it can turn on again.
-    if (requestedValue == 0) {
-      ledc_set_duty(ledcMode, ledcChannel_ldr, 0);
-      ledc_update_duty(ledcMode, ledcChannel_ldr);
-      // We don't save 0 to currentBrightnessDutyCycle here
-      server.send(200, "text/plain", "OK");
-    } else if (requestedValue > 0 && requestedValue <= ledcMaxValue) {
+    if (requestedValue >= 0 && requestedValue <= ledcMaxValue) {
       currentBrightnessDutyCycle = requestedValue;
       preferences.putUInt("brightness", currentBrightnessDutyCycle);
-      ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
-      ledc_update_duty(ledcMode, ledcChannel_ldr);
+      // Immediately set the new brightness if the LED is currently on
+      if (ledc_get_duty(ledcMode, ledcChannel_ldr) > 0) {
+        ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
+        ledc_update_duty(ledcMode, ledcChannel_ldr);
+      }
       server.send(200, "text/plain", "OK");
     } else {
       server.send(400, "text/plain", "Error");
@@ -317,6 +345,11 @@ void setup() {
   ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
   ledc_update_duty(ledcMode, ledcChannel_ldr);
 
+  // Initialize all LDR readings to 0
+  for (int thisReading = 0; thisReading < NUM_LDR_READINGS; thisReading++) {
+    ldrReadings[thisReading] = 0;
+  }
+
   WiFi.config(staticIP, gateway, subnet);
   WiFi.begin(ssid);
   while (WiFi.status() != WL_CONNECTED) {
@@ -338,7 +371,8 @@ void setup() {
   server.on("/data", handleData);
   server.begin();
 
-  readSensors();
+  readDHT();
+  updateLdrAverage();
   lastLDRState = lastLight < lightThreshold;
   if (lastLDRState) {
     ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
@@ -357,9 +391,16 @@ void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
 
-  if (currentMillis - previousSensorMillis >= sensorInterval) {
-    previousSensorMillis = currentMillis;
-    readSensors();
+  // Read DHT sensor every 5 seconds
+  if (currentMillis - previousDHTMillis >= dhtInterval) {
+    previousDHTMillis = currentMillis;
+    readDHT();
+  }
+
+  // Update LDR average every 20ms for a smoother 2s average
+  if (currentMillis - previousLDRMillis >= ldrInterval) {
+    previousLDRMillis = currentMillis;
+    updateLdrAverage();
   }
 
   currentProximityValue = digitalRead(proximitysw);
@@ -406,8 +447,8 @@ void loop() {
     }
   }
 
-  int currentLight = analogRead(lightsensor);
-  bool currentLDRState = currentLight < lightThreshold;
+  // The LDR state is now based on the averaged reading from updateLdrAverage()
+  bool currentLDRState = lastLight < lightThreshold;
 
   if (currentLDRState != lastLDRState) {
     lastLDRChangeTime = currentMillis;
