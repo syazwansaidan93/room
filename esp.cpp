@@ -116,6 +116,12 @@ void updateLdrAverage() {
   lastLight = ldrAverage;
 }
 
+// Function to toggle the state of the reverse LED
+void toggleReverseLed() {
+  int currentState = digitalRead(reverseled);
+  digitalWrite(reverseled, !currentState);
+}
+
 void handleOn() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   currentMode = MANUAL_ON_PERMANENT;
@@ -301,7 +307,7 @@ void setup() {
   pinMode(mainled, OUTPUT);
   pinMode(reverseled, OUTPUT); // Configure the new reverse LED pin
   digitalWrite(fanrelay, LOW);
-  digitalWrite(reverseled, LOW); // Ensure the reverse LED is off at startup
+  digitalWrite(reverseled, LOW); // Start with the reverse LED off
 
   ledc_timer_config_t ledcTimerConfig_ldr = {
     .speed_mode = ledcMode,
@@ -397,17 +403,15 @@ void loop() {
   // Read DHT sensor every 5 seconds
   if (currentMillis - previousDHTMillis >= dhtInterval) {
     previousDHTMillis = currentMillis;
-    digitalWrite(reverseled, HIGH); // Turn on the LED for the duration of the DHT read
     readDHT();
-    digitalWrite(reverseled, LOW); // Turn off the LED after the DHT read
+    toggleReverseLed(); // Toggle the LED after the DHT read
   }
 
   // Update LDR average every 40ms for a smoother 4s average
   if (currentMillis - previousLDRMillis >= ldrInterval) {
     previousLDRMillis = currentMillis;
-    digitalWrite(reverseled, HIGH); // Turn on the LED for the duration of the LDR read
     updateLdrAverage();
-    digitalWrite(reverseled, LOW); // Turn off the LED after the LDR read
+    toggleReverseLed(); // Toggle the LED after the LDR read
   }
 
   currentProximityValue = digitalRead(proximitysw);
@@ -463,13 +467,13 @@ void loop() {
 
   if ((currentMillis - lastLDRChangeTime) >= debounceDelay) {
     if (currentLDRState) {
-      // It's dark, so the night LED turns on and the reverse LED turns off
+      // It's dark, so the night LED turns on
       if (ledc_get_duty(ledcMode, ledcChannel_ldr) != currentBrightnessDutyCycle) {
         ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
         ledc_update_duty(ledcMode, ledcChannel_ldr);
       }
     } else {
-      // It's light, so the night LED turns off and the reverse LED turns on
+      // It's light, so the night LED turns off
       if (ledc_get_duty(ledcMode, ledcChannel_ldr) > 0) {
         ledc_set_duty(ledcMode, ledcChannel_ldr, 0);
         ledc_update_duty(ledcMode, ledcChannel_ldr);
