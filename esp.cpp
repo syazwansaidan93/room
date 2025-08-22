@@ -34,6 +34,7 @@ int ldrReadings[NUM_LDR_READINGS];
 int ldrReadIndex = 0;
 long ldrTotal = 0;
 int ldrAverage = 0;
+int ldrBlinkCounter = 0; // Counter for LDR blink
 
 // LEDC (PWM) Configuration for Night LED
 const ledc_mode_t ledcMode = LEDC_LOW_SPEED_MODE;
@@ -116,16 +117,18 @@ void updateLdrAverage() {
   lastLight = ldrAverage;
 }
 
-// Function to toggle the state of the reverse LED
-void toggleReverseLed() {
-  int currentState = digitalRead(reverseled);
-  digitalWrite(reverseled, !currentState);
+// Function to blink the reverse LED for a short duration
+void blinkReverseLed() {
+  digitalWrite(reverseled, LOW);  // Turn on the LED (inverse logic)
+  delay(50);                      // Wait for 50 milliseconds
+  digitalWrite(reverseled, HIGH); // Turn off the LED (inverse logic)
 }
 
 void handleOn() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   currentMode = MANUAL_ON_PERMANENT;
   digitalWrite(fanrelay, HIGH);
+  blinkReverseLed();
   server.send(200, "text/plain", "OK");
 }
 
@@ -133,6 +136,7 @@ void handleOff() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   currentMode = AUTOMATED;
   digitalWrite(fanrelay, LOW);
+  blinkReverseLed();
   server.send(200, "text/plain", "OK");
 }
 
@@ -141,6 +145,7 @@ void handleOn1h() {
   currentMode = MANUAL_ON_TIMED;
   digitalWrite(fanrelay, HIGH);
   manualTimerEnd = millis() + 3600000;
+  blinkReverseLed();
   server.send(200, "text/plain", "OK");
 }
 
@@ -149,6 +154,7 @@ void handleOn30m() {
   currentMode = MANUAL_ON_TIMED;
   digitalWrite(fanrelay, HIGH);
   manualTimerEnd = millis() + 1800000;
+  blinkReverseLed();
   server.send(200, "text/plain", "OK");
 }
 
@@ -157,6 +163,7 @@ void handleSetTempOn() {
   if (server.hasArg("value")) {
     tempOn = server.arg("value").toFloat();
     preferences.putFloat("tempOn", tempOn);
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Error");
@@ -168,6 +175,7 @@ void handleSetTempOff() {
   if (server.hasArg("value")) {
     tempOff = server.arg("value").toFloat();
     preferences.putFloat("tempOff", tempOff);
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Error");
@@ -186,6 +194,7 @@ void handleSetBrightness() {
         ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
         ledc_update_duty(ledcMode, ledcChannel_ldr);
       }
+      blinkReverseLed();
       server.send(200, "text/plain", "OK");
     } else {
       server.send(400, "text/plain", "Error");
@@ -200,6 +209,7 @@ void handleSetLightThreshold() {
   if (server.hasArg("value")) {
     lightThreshold = server.arg("value").toInt();
     preferences.putUInt("lightThreshold", lightThreshold);
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Error");
@@ -213,6 +223,7 @@ void handleSetMainLedBrightness() {
     if (requestedValue >= 0 && requestedValue <= ledcMaxValue) {
       mainLedBrightnessDutyCycle = requestedValue;
       preferences.putUInt("mainLedBrightness", mainLedBrightnessDutyCycle);
+      blinkReverseLed();
       server.send(200, "text/plain", "OK");
     } else {
       server.send(400, "text/plain", "Error");
@@ -227,6 +238,7 @@ void handleSetDebounceDelay() {
   if (server.hasArg("value")) {
     debounceDelay = server.arg("value").toInt();
     preferences.putUInt("debounceDelay", debounceDelay);
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Error");
@@ -238,8 +250,10 @@ void handleToggleMainLed() {
   if (proximityManualState) {
     mainLedManualState = !mainLedManualState;
     preferences.putBool("mainLedManualState", mainLedManualState);
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   } else {
+    blinkReverseLed();
     server.send(200, "text/plain", "OK");
   }
 }
@@ -248,6 +262,7 @@ void handleToggleMasterSwitch() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   proximityManualState = !proximityManualState;
   preferences.putBool("proximityManualState", proximityManualState);
+  blinkReverseLed();
   server.send(200, "text/plain", "OK");
 }
 
@@ -278,6 +293,7 @@ void handleData() {
 
   String response;
   serializeJson(jsonDoc, response);
+  blinkReverseLed();
   server.send(200, "application/json", response);
 }
 
@@ -307,7 +323,7 @@ void setup() {
   pinMode(mainled, OUTPUT);
   pinMode(reverseled, OUTPUT); // Configure the new reverse LED pin
   digitalWrite(fanrelay, LOW);
-  digitalWrite(reverseled, LOW); // Start with the reverse LED off
+  digitalWrite(reverseled, HIGH); // Start with the reverse LED off (inverse logic)
 
   ledc_timer_config_t ledcTimerConfig_ldr = {
     .speed_mode = ledcMode,
@@ -404,14 +420,19 @@ void loop() {
   if (currentMillis - previousDHTMillis >= dhtInterval) {
     previousDHTMillis = currentMillis;
     readDHT();
-    toggleReverseLed(); // Toggle the LED after the DHT read
+    blinkReverseLed(); // Blink the LED after the DHT read
   }
 
   // Update LDR average every 40ms for a smoother 4s average
   if (currentMillis - previousLDRMillis >= ldrInterval) {
     previousLDRMillis = currentMillis;
     updateLdrAverage();
-    toggleReverseLed(); // Toggle the LED after the LDR read
+    // Check if a full averaging cycle is complete
+    ldrBlinkCounter++;
+    if (ldrBlinkCounter >= NUM_LDR_READINGS) {
+      ldrBlinkCounter = 0;
+      blinkReverseLed(); // Blink the LED after a full LDR average is complete
+    }
   }
 
   currentProximityValue = digitalRead(proximitysw);
