@@ -27,6 +27,7 @@ int lightThreshold = 2350;
 const ledc_mode_t ledcMode = LEDC_LOW_SPEED_MODE;
 const ledc_timer_bit_t ledcResolution = LEDC_TIMER_13_BIT;
 const int ledcMaxValue = 8191;
+const int ledcMinValue = 20;
 
 const ledc_timer_t ledcTimer_ldr = LEDC_TIMER_0;
 const ledc_channel_t ledcChannel_ldr = LEDC_CHANNEL_0;
@@ -64,7 +65,6 @@ bool lastLDRState;
 bool mainLedManualState = false;
 bool proximityManualState = false;
 bool lastFanState = false;
-int lastNightLedDuty = 0;
 
 enum ControlMode { AUTOMATED, MANUAL_ON_PERMANENT, MANUAL_ON_TIMED };
 ControlMode currentMode = AUTOMATED;
@@ -139,7 +139,14 @@ void handleSetBrightness() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   if (server.hasArg("value")) {
     int requestedValue = server.arg("value").toInt();
-    if (requestedValue >= 0 && requestedValue <= ledcMaxValue) {
+    // If the requested value is 0, turn the LED off but don't save 0 as the brightness.
+    // Instead, save a minimal value to ensure it can turn on again.
+    if (requestedValue == 0) {
+      ledc_set_duty(ledcMode, ledcChannel_ldr, 0);
+      ledc_update_duty(ledcMode, ledcChannel_ldr);
+      // We don't save 0 to currentBrightnessDutyCycle here
+      server.send(200, "text/plain", "OK");
+    } else if (requestedValue > 0 && requestedValue <= ledcMaxValue) {
       currentBrightnessDutyCycle = requestedValue;
       preferences.putUInt("brightness", currentBrightnessDutyCycle);
       ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
@@ -248,6 +255,9 @@ void setup() {
   tempOn = preferences.getFloat("tempOn", 29.0);
   tempOff = preferences.getFloat("tempOff", 28.5);
   currentBrightnessDutyCycle = preferences.getUInt("brightness", 4096);
+  if (currentBrightnessDutyCycle == 0) {
+    currentBrightnessDutyCycle = ledcMinValue;
+  }
   lightThreshold = preferences.getUInt("lightThreshold", 2350);
   mainLedBrightnessDutyCycle = preferences.getUInt("mainLedBrightness", 8191);
   ledcBaseFreq = preferences.getUInt("pwmFrequency", 5000);
@@ -340,7 +350,6 @@ void setup() {
 
   lastProximityValue = digitalRead(proximitysw);
   lastFanState = digitalRead(fanrelay);
-  lastNightLedDuty = ledc_get_duty(ledcMode, ledcChannel_ldr);
 }
 
 void loop() {
@@ -405,8 +414,7 @@ void loop() {
   }
 
   if ((currentMillis - lastLDRChangeTime) >= debounceDelay) {
-    // New condition added here to check if the main LED is off before turning on the night LED
-    if (currentLDRState && ledc_get_duty(ledcMode, ledcChannel_mainLed) == 0) {
+    if (currentLDRState) {
       if (ledc_get_duty(ledcMode, ledcChannel_ldr) != currentBrightnessDutyCycle) {
         ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
         ledc_update_duty(ledcMode, ledcChannel_ldr);
