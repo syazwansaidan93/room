@@ -71,8 +71,15 @@ ControlMode currentMode = AUTOMATED;
 unsigned long manualTimerEnd = 0;
 
 void readSensors() {
-  lastHumidity = dht.readHumidity() + humidityOffset;
-  lastTemperature = dht.readTemperature() + tempOffset;
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    return;
+  }
+
+  lastHumidity = h + humidityOffset;
+  lastTemperature = t + tempOffset;
   lastLight = analogRead(lightsensor);
 }
 
@@ -208,7 +215,6 @@ void handleData() {
   char tempStr[6];
   sprintf(tempStr, "%.1f", lastTemperature);
 
-  // Add uptime calculation
   unsigned long uptimeSeconds = millis() / 1000;
 
   jsonDoc["temperature"] = tempStr;
@@ -338,8 +344,7 @@ void setup() {
 }
 
 void loop() {
-  // Yield to other tasks to prevent WDT timeout
-  delay(1);
+  yield();
   server.handleClient();
   unsigned long currentMillis = millis();
 
@@ -400,7 +405,8 @@ void loop() {
   }
 
   if ((currentMillis - lastLDRChangeTime) >= debounceDelay) {
-    if (currentLDRState) {
+    // New condition added here to check if the main LED is off before turning on the night LED
+    if (currentLDRState && ledc_get_duty(ledcMode, ledcChannel_mainLed) == 0) {
       if (ledc_get_duty(ledcMode, ledcChannel_ldr) != currentBrightnessDutyCycle) {
         ledc_set_duty(ledcMode, ledcChannel_ldr, currentBrightnessDutyCycle);
         ledc_update_duty(ledcMode, ledcChannel_ldr);
