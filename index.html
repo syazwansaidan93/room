@@ -19,33 +19,35 @@
 <body class="p-4 sm:p-8">
 
     <div class="max-w-md mx-auto bg-slate-800 rounded-2xl shadow-xl p-6 space-y-6">
-
+        
+        <!-- Current Time -->
+        <div class="text-right text-xs text-slate-400">
+            <p id="current-time">--:--:--</p>
+        </div>
 
         <!-- Status and Sensor Data -->
-        <div class="grid grid-cols-2 gap-4">
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Temperature</p>
-                <p id="temperature" class="text-2xl font-bold text-green-300 mt-1">-- °C</p>
-            </div>
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Humidity</p>
-                <p id="humidity" class="text-2xl font-bold text-green-300 mt-1">-- %</p>
-            </div>
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Light</p>
-                <p id="light" class="text-2xl font-bold text-green-300 mt-1">-- Lux</p>
-            </div>
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Fan Status</p>
-                <p id="fan_status" class="text-2xl font-bold text-green-300 mt-1">--</p>
-            </div>
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Control Mode</p>
-                <p id="control_mode" class="text-lg font-bold text-yellow-300 mt-1">--</p>
-            </div>
-            <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                <p class="text-sm text-slate-300">Uptime</p>
-                <p id="uptime" class="text-lg font-bold text-slate-300 mt-1">--</p>
+        <div class="space-y-4">
+            <!-- Two-by-two grid for all four status cards -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-300">Uptime</p>
+                    <p id="uptime" class="text-lg font-bold text-slate-300 mt-1">--</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-300">Temp / Humidity</p>
+                    <div class="flex justify-between items-end mt-1">
+                        <p id="temperature" class="text-2xl font-bold text-green-300">-- °C</p>
+                        <p id="humidity" class="text-2xl font-bold text-green-300">-- %</p>
+                    </div>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-300">Fan Status</p>
+                    <p id="fan_status" class="text-2xl font-bold text-green-300 mt-1">--</p>
+                </div>
+                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-300">Control Mode</p>
+                    <p id="control_mode" class="text-lg font-bold text-yellow-300 mt-1">--</p>
+                </div>
             </div>
         </div>
 
@@ -79,10 +81,11 @@
         <div class="pt-4 border-t border-slate-700">
             <h2 class="text-xl font-semibold text-slate-300 mb-4">Settings</h2>
             <div class="space-y-4">
-                <!-- Temperature Settings -->
+                <!-- Temperature and Humidity Settings -->
                 <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <h3 class="font-medium text-slate-200">Temperature Thresholds</h3>
-                    <p class="text-sm text-slate-400 mt-1">Current On: <span id="tempOnValue" class="text-green-300">--</span>°C | Current Off: <span id="tempOffValue" class="text-red-300">--</span>°C</p>
+                    <h3 class="font-medium text-slate-200">Thresholds</h3>
+                    <p class="text-sm text-slate-400 mt-1">Current Temp On: <span id="tempOnValue" class="text-green-300">--</span>°C | Off: <span id="tempOffValue" class="text-red-300">--</span>°C</p>
+                    
                     <div class="flex items-center space-x-2 mt-2">
                         <input type="number" id="tempOnInput" placeholder="Temp On" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
                         <button onclick="setThreshold('/set-temp-on', 'tempOnInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
@@ -96,28 +99,17 @@
                 <!-- Light Settings -->
                 <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
                     <h3 class="font-medium text-slate-200">Light and Brightness</h3>
-                    <p class="text-sm text-slate-400 mt-1">Current Threshold: <span id="lightThresholdValue" class="text-green-300">--</span> Lux</p>
-                    <div class="flex items-center space-x-2 mt-2">
-                        <input type="number" id="lightThresholdInput" placeholder="Light Threshold" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
-                        <button onclick="setThreshold('/set-light-threshold', 'lightThresholdInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
-                    </div>
-
-                    <!-- Debounce Delay Section -->
-                    <p class="text-sm text-slate-400 mt-4">Current Debounce Delay: <span id="debounceDelayValue" class="text-green-300">--</span> ms</p>
-                    <div class="flex items-center space-x-2 mt-2">
-                        <input type="number" id="debounceDelayInput" placeholder="Debounce Delay (ms)" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
-                        <button onclick="setThreshold('/set-debounce-delay', 'debounceDelayInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
-                    </div>
-
+                    <p class="text-sm text-slate-400 mt-1">Night LED Brightness: <span id="night_led_brightness_level" class="text-slate-300">-- %</span></p>
+                    <p class="text-sm text-slate-400 mt-1">Main LED Brightness: <span id="main_led_brightness_level" class="text-slate-300">-- %</span></p>
                     <div class="mt-4">
-                        <label for="nightLedSlider" class="block text-sm text-slate-300">Night LED Brightness</label>
+                        <label for="nightLedSlider" class="block text-sm text-slate-300">Set Night LED Brightness</label>
                         <input type="range" id="nightLedSlider" min="0" max="8191" value="4096" class="w-full mt-2">
-                        <button onclick="setBrightness('/set-brightness', 'nightLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set Night LED</button>
+                        <button onclick="setBrightness('/set-brightness', 'nightLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set</button>
                     </div>
                     <div class="mt-4">
-                        <label for="mainLedSlider" class="block text-sm text-slate-300">Main LED Brightness</label>
+                        <label for="mainLedSlider" class="block text-sm text-slate-300">Set Main LED Brightness</label>
                         <input type="range" id="mainLedSlider" min="0" max="8191" value="8191" class="w-full mt-2">
-                        <button onclick="setBrightness('/set-main-led-brightness', 'mainLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set Main LED</button>
+                        <button onclick="setBrightness('/set-main-led-brightness', 'mainLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set</button>
                     </div>
                 </div>
             </div>
@@ -129,18 +121,18 @@
         const proxyBaseUrl = "/api.php";
 
         const uiElements = {
+            currentTime: document.getElementById("current-time"),
             temperature: document.getElementById("temperature"),
             humidity: document.getElementById("humidity"),
-            light: document.getElementById("light"),
             fan_status: document.getElementById("fan_status"),
             control_mode: document.getElementById("control_mode"),
             uptime: document.getElementById("uptime"),
+            night_led_brightness_level: document.getElementById("night_led_brightness_level"),
+            main_led_brightness_level: document.getElementById("main_led_brightness_level"),
             toggleMasterSwitchBtn: document.getElementById("toggle-master-switch-btn"),
             toggleMainLedBtn: document.getElementById("toggle-main-led-btn"),
             tempOnValue: document.getElementById("tempOnValue"),
-            tempOffValue: document.getElementById("tempOffValue"),
-            lightThresholdValue: document.getElementById("lightThresholdValue"),
-            debounceDelayValue: document.getElementById("debounceDelayValue")
+            tempOffValue: document.getElementById("tempOffValue")
         };
 
         async function fetchData() {
@@ -154,7 +146,7 @@
             } catch (error) {
                 console.error("Could not fetch data:", error);
                 for (const key in uiElements) {
-                    if (uiElements[key] && key !== 'toggleMasterSwitchBtn' && key !== 'toggleMainLedBtn' && uiElements[key].tagName !== 'INPUT') {
+                    if (uiElements[key] && key !== 'toggleMasterSwitchBtn' && key !== 'toggleMainLedBtn' && uiElements[key].tagName !== 'INPUT' && key !== 'currentTime') {
                         uiElements[key].textContent = "Offline";
                     }
                 }
@@ -164,20 +156,40 @@
         function updateUI(data) {
             uiElements.temperature.textContent = `${data.temperature}°C`;
             uiElements.humidity.textContent = `${data.humidity}%`;
-            uiElements.light.textContent = `${data.light} Lux`;
             uiElements.fan_status.textContent = data.gpio_status === "on" ? "ON" : "OFF";
             uiElements.fan_status.classList.toggle('text-green-300', data.gpio_status === "on");
             uiElements.fan_status.classList.toggle('text-red-300', data.gpio_status === "off");
             uiElements.control_mode.textContent = data.control_mode;
-            uiElements.uptime.textContent = `${Math.floor(data.uptime_seconds / 60)} min`;
+            
+            // Set current time from JSON data
+            if (data.current_time) {
+                const timePart = data.current_time.split(' ')[1];
+                uiElements.currentTime.textContent = timePart;
+            } else {
+                uiElements.currentTime.textContent = '--:--:--';
+            }
+            
+            // Calculate and format uptime with labels
+            const totalSeconds = data.uptime_seconds;
+            const days = Math.floor(totalSeconds / (3600 * 24));
+            const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            
+            const formattedUptime =
+                String(days).padStart(2, '0') + 'd ' +
+                String(hours).padStart(2, '0') + 'h ' +
+                String(minutes).padStart(2, '0') + 'm';
+            
+            uiElements.uptime.textContent = formattedUptime;
+
+            uiElements.night_led_brightness_level.textContent = `${data.night_led_brightness_level.toFixed(1)} %`;
+            uiElements.main_led_brightness_level.textContent = `${data.main_led_brightness_level.toFixed(1)} %`;
 
             uiElements.tempOnValue.textContent = data.temp_on_threshold;
             uiElements.tempOffValue.textContent = data.temp_off_threshold;
-            uiElements.lightThresholdValue.textContent = data.light_threshold;
-            uiElements.debounceDelayValue.textContent = data.debounce_delay_ms;
 
             const masterSwitchBtn = uiElements.toggleMasterSwitchBtn;
-            masterSwitchBtn.classList.remove('bg-rose-500', 'hover:bg-rose-600', 'active:bg-rose-700', 'bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
+            masterSwitchBtn.classList.remove('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
             if (data.master_switch_state === "on") {
                 masterSwitchBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
             } else {
@@ -185,18 +197,16 @@
             }
 
             const mainLedBtn = uiElements.toggleMainLedBtn;
-            mainLedBtn.classList.remove('bg-sky-500', 'hover:bg-sky-600', 'active:bg-sky-700', 'bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700', 'bg-slate-400', 'hover:bg-slate-500', 'active:bg-slate-600');
-            if (data.master_switch_state === "on") {
-                if (data.main_led_status === "on") {
-                    mainLedBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
-                } else {
-                    mainLedBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
-                }
+            mainLedBtn.classList.remove('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700', 'bg-slate-500', 'hover:bg-slate-600', 'active:bg-slate-700');
+            if (data.master_switch_state === "off") {
+                mainLedBtn.classList.add('bg-slate-500', 'hover:bg-slate-600', 'active:bg-slate-700');
+            } else if (data.main_led_status === "on") {
+                mainLedBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
             } else {
-                mainLedBtn.classList.add('bg-slate-400', 'hover:bg-slate-500', 'active:bg-slate-600');
+                mainLedBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
             }
         }
-
+        
         async function sendControl(endpoint) {
             try {
                 const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}`);
