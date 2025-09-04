@@ -52,6 +52,7 @@ unsigned long lastFanStateChange = 0;
 const unsigned long fanCooldownDelay = 5000;
 bool fanIsOnAutomatic = true;
 bool serverStarted = false;
+bool isAutoToggleDone = false;
 
 Preferences preferences;
 WebServer server(80);
@@ -62,7 +63,7 @@ bool sensorIsFaulty = false;
 
 bool isBlinking = false;
 unsigned long blinkStartTime = 0;
-const unsigned long blinkDuration = 100;
+const unsigned long blinkDuration = 10;
 
 void triggerBlink() {
   digitalWrite(ACTIVITY_LED_PIN, HIGH);
@@ -370,6 +371,19 @@ void loop() {
     masterswState = 1 - masterswState;
   }
   lastMasterswReading = currentMasterswReading;
+
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 30 && !isAutoToggleDone) {
+      if (mainledswState == 0 && masterswState == 0) {
+        mainledswState = 1;
+        isAutoToggleDone = true;
+      }
+    }
+    if (timeinfo.tm_hour < 19) {
+      isAutoToggleDone = false;
+    }
+  }
 
   if (mainledswState == 1 && masterswState == 1) {
     digitalWrite(MAINLED_PIN, HIGH);
