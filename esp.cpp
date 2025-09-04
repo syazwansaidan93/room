@@ -14,6 +14,7 @@
 #define MASTERSW_PIN 3
 #define DS18B20_PIN 4
 #define FAN_PIN 6
+#define ACTIVITY_LED_PIN 0
 
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
@@ -59,6 +60,16 @@ const int maxFailedReads = 5;
 int consecutiveFailedReads = 0;
 bool sensorIsFaulty = false;
 
+bool isBlinking = false;
+unsigned long blinkStartTime = 0;
+const unsigned long blinkDuration = 100;
+
+void triggerBlink() {
+  digitalWrite(ACTIVITY_LED_PIN, HIGH);
+  blinkStartTime = millis();
+  isBlinking = true;
+}
+
 void onWiFiEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -89,6 +100,7 @@ bool isTimeInRange(int startHour, int startMin, int endHour, int endMin) {
 }
 
 void handleMainToggle() {
+  triggerBlink();
   if (masterswState == 1) {
     mainledswState = 1 - mainledswState;
   }
@@ -97,12 +109,14 @@ void handleMainToggle() {
 }
 
 void handleMasterToggle() {
+  triggerBlink();
   masterswState = 1 - masterswState;
   String response = "Master Switch state is now: " + String(masterswState);
   server.send(200, "text/plain", response);
 }
 
 void handleSetTempOn() {
+  triggerBlink();
   if (!server.hasArg("tempOn")) {
     server.send(400, "text/plain", "Missing 'tempOn' parameter.");
     return;
@@ -121,6 +135,7 @@ void handleSetTempOn() {
 }
 
 void handleSetTempOff() {
+  triggerBlink();
   if (!server.hasArg("tempOff")) {
     server.send(400, "text/plain", "Missing 'tempOff' parameter.");
     return;
@@ -139,6 +154,7 @@ void handleSetTempOff() {
 }
 
 void handleFanOn30m() {
+  triggerBlink();
   if (masterswState == 1 && fanIsOnAutomatic == true && digitalRead(FAN_PIN) == LOW) {
     fanOverride = true;
     fanOverrideStartTime = millis();
@@ -151,6 +167,7 @@ void handleFanOn30m() {
 }
 
 void handleFanOff() {
+  triggerBlink();
   digitalWrite(FAN_PIN, LOW);
   fanOverride = false;
   fanIsOnAutomatic = true;
@@ -158,6 +175,7 @@ void handleFanOff() {
 }
 
 void handleSetNightledPWM() {
+  triggerBlink();
   if (!server.hasArg("pwmValue")) {
     server.send(400, "text/plain", "Missing 'pwmValue' parameter.");
     return;
@@ -180,6 +198,7 @@ bool shouldNightLedBeOn() {
 }
 
 void handleITemp() {
+  triggerBlink();
   if (sensorIsFaulty) {
     server.send(404, "text/plain", "Sensor is faulty.");
   } else {
@@ -188,6 +207,7 @@ void handleITemp() {
 }
 
 void handleState() {
+  triggerBlink();
   StaticJsonDocument<300> doc;
   
   struct tm timeinfo;
@@ -269,6 +289,7 @@ void setup() {
   pinMode(MAINLED_PIN, OUTPUT);
   pinMode(NIGHTLED_PIN, OUTPUT);
   pinMode(FAN_PIN, OUTPUT);
+  pinMode(ACTIVITY_LED_PIN, OUTPUT);
   pinMode(MAINLEDSW_PIN, INPUT_PULLUP);
   pinMode(MASTERSW_PIN, INPUT_PULLUP);
 
@@ -298,6 +319,10 @@ void setup() {
 }
 
 void loop() {
+  if (isBlinking && (millis() - blinkStartTime) >= blinkDuration) {
+    digitalWrite(ACTIVITY_LED_PIN, LOW);
+    isBlinking = false;
+  }
   if (WiFi.status() == WL_CONNECTED && !serverStarted) {
     server.begin();
     serverStarted = true;
@@ -306,6 +331,7 @@ void loop() {
   server.handleClient();
 
   if (millis() - lastSensorReadTime >= sensorReadInterval) {
+    triggerBlink();
     sensors.requestTemperatures();
     float temp = sensors.getTempC(tempSensorAddress);
 
