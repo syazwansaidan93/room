@@ -331,7 +331,7 @@ void loop() {
   
   server.handleClient();
 
-  if (millis() - lastSensorReadTime >= sensorReadInterval) {
+  if (millis() - lastSensorReadTime >= sensorReadInterval && masterswState == 1 && fanIsOnAutomatic) {
     triggerBlink();
     sensors.requestTemperatures();
     float temp = sensors.getTempC(tempSensorAddress);
@@ -374,8 +374,8 @@ void loop() {
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
-    if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 30 && !isAutoToggleDone) {
-      if (mainledswState == 0 && masterswState == 0) {
+    if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 0 && !isAutoToggleDone) {
+      if (mainledswState == 0) {
         mainledswState = 1;
         isAutoToggleDone = true;
       }
