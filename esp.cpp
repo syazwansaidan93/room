@@ -249,30 +249,6 @@ void controlNightLED() {
   }
 }
 
-void controlFan() {
-  if (fanIsOnAutomatic && !sensorIsFaulty) {
-    if (masterswState == 1) {
-      if (millis() - lastFanStateChange < fanCooldownDelay) {
-        return;
-      }
-      
-      if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) {
-        digitalWrite(FAN_PIN, HIGH);
-        lastFanStateChange = millis();
-      }
-      else if (digitalRead(FAN_PIN) == HIGH && currentTemperature <= tempThresholdOff) {
-        digitalWrite(FAN_PIN, LOW);
-        lastFanStateChange = millis();
-      }
-    } else {
-      digitalWrite(FAN_PIN, LOW);
-    }
-  } else if (!fanIsOnAutomatic) {
-  } else {
-    digitalWrite(FAN_PIN, LOW);
-  }
-}
-
 void setup() {
   setCpuFrequencyMhz(80);
   WiFi.onEvent(onWiFiEvent);
@@ -353,9 +329,51 @@ void loop() {
     fanOverride = false;
     fanIsOnAutomatic = true;
   }
+
+  static unsigned long lastScheduledFanToggle = 0;
+  static bool scheduledFanActive = false;
+  const unsigned long fanScheduleInterval = 15 * 60 * 1000;
+  const unsigned long fanScheduleDuration = 1 * 60 * 1000;
+
+  if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
+    if (scheduledFanActive) {
+      if (millis() - lastScheduledFanToggle >= fanScheduleDuration) {
+        digitalWrite(FAN_PIN, LOW);
+        scheduledFanActive = false;
+      }
+    } else {
+      if (digitalRead(FAN_PIN) == LOW && millis() - lastScheduledFanToggle >= fanScheduleInterval) {
+        digitalWrite(FAN_PIN, HIGH);
+        lastScheduledFanToggle = millis();
+        scheduledFanActive = true;
+      }
+    }
+  } else {
+    scheduledFanActive = false;
+  }
   
   if (fanOverride) {
     digitalWrite(FAN_PIN, HIGH);
+  } else if (scheduledFanActive) {
+    // Fan is already being handled by the scheduled logic
+  } else if (fanIsOnAutomatic && !sensorIsFaulty) {
+    if (masterswState == 1) {
+      if (millis() - lastFanStateChange < fanCooldownDelay) {
+        // Do nothing, cooldown period is active.
+      }
+      else if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) {
+        digitalWrite(FAN_PIN, HIGH);
+        lastFanStateChange = millis();
+      }
+      else if (digitalRead(FAN_PIN) == HIGH && currentTemperature <= tempThresholdOff) {
+        digitalWrite(FAN_PIN, LOW);
+        lastFanStateChange = millis();
+      }
+    } else {
+      digitalWrite(FAN_PIN, LOW);
+    }
+  } else {
+    digitalWrite(FAN_PIN, LOW);
   }
 
   int currentMainledswReading = digitalRead(MAINLEDSW_PIN);
@@ -392,7 +410,6 @@ void loop() {
   }
 
   controlNightLED();
-  controlFan();
 
   yield();
 }
