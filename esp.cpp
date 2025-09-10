@@ -169,10 +169,14 @@ void handleFanOn30m() {
 
 void handleFanOff() {
   triggerBlink();
-  digitalWrite(FAN_PIN, LOW);
-  fanOverride = false;
-  fanIsOnAutomatic = true;
-  server.send(200, "text/plain", "Fan turned off. Automatic mode is restored.");
+  if (fanIsOnAutomatic && digitalRead(FAN_PIN) == HIGH) {
+    server.send(400, "text/plain", "Cannot turn fan off: Fan is currently running in automatic mode.");
+  } else {
+    digitalWrite(FAN_PIN, LOW);
+    fanOverride = false;
+    fanIsOnAutomatic = true;
+    server.send(200, "text/plain", "Fan turned off. Automatic mode is restored.");
+  }
 }
 
 void handleSetNightledPWM() {
