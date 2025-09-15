@@ -478,7 +478,7 @@ void loop() {
     lastSensorReadTime = millis();
   }
 
-  if (millis() - lastExternalDataFetch >= externalDataFetchInterval) {
+  if (masterswState == 1 && millis() - lastExternalDataFetch >= externalDataFetchInterval) {
     fetchExternalData();
     lastExternalDataFetch = millis();
   }
