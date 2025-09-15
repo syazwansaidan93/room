@@ -7,6 +7,9 @@
 #include <Preferences.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <HTTPClient.h>
 
 #define MAINLED_PIN 1
 #define NIGHTLED_PIN 7
@@ -15,6 +18,12 @@
 #define DS18B20_PIN 4
 #define FAN_PIN 6
 #define ACTIVITY_LED_PIN 0
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_SDA 8
+#define OLED_SCL 9
+#define OLED_ADDR 0x3C
 
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
@@ -64,6 +73,14 @@ bool sensorIsFaulty = false;
 bool isBlinking = false;
 unsigned long blinkStartTime = 0;
 const unsigned long blinkDuration = 10;
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+String solarStatus = "N/A";
+float outdoorTemp = 0.0;
+float currentPower = 0.0;
+unsigned long lastExternalDataFetch = 0;
+const unsigned long externalDataFetchInterval = 10000;
 
 void triggerBlink() {
   digitalWrite(ACTIVITY_LED_PIN, HIGH);
@@ -253,12 +270,137 @@ void controlNightLED() {
   }
 }
 
+void fetchExternalData() {
+  HTTPClient http;
+
+  http.begin("http://192.168.1.3/api/r/latest");
+  int httpCode = http.GET();
+  if (httpCode > 0) {
+    String payload = http.getString();
+    StaticJsonDocument<100> doc;
+    deserializeJson(doc, payload);
+    if (doc.containsKey("relay_status")) {
+      solarStatus = doc["relay_status"].as<String>();
+    }
+  }
+  http.end();
+
+  http.begin("http://192.168.1.3/api/o/latest");
+  httpCode = http.GET();
+  if (httpCode > 0) {
+    String payload = http.getString();
+    StaticJsonDocument<100> doc;
+    deserializeJson(doc, payload);
+    if (doc.containsKey("outdoor")) {
+      outdoorTemp = doc["outdoor"].as<float>();
+    }
+  }
+  http.end();
+  
+  http.begin("http://192.168.1.3/api/s/latest");
+  httpCode = http.GET();
+  if (httpCode > 0) {
+    String payload = http.getString();
+    StaticJsonDocument<100> doc;
+    deserializeJson(doc, payload);
+    if (doc.containsKey("power_mW")) {
+      currentPower = doc["power_mW"].as<float>() / 1000.0;
+    }
+  }
+  http.end();
+}
+
+void updateDisplay() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setCursor(0, 0);
+  display.setTextSize(1);
+  display.print("WiFi: [");
+  long rssi = WiFi.RSSI();
+  int bars = map(rssi, -100, -30, 0, 12);
+  for (int i = 0; i < 12; i++) {
+    if (i < bars) {
+      display.print("=");
+    } else {
+      display.print(" ");
+    }
+  }
+  display.println("]");
+  
+  display.setCursor(0, 16);
+  display.setTextSize(1);
+  display.print("I");
+  display.setCursor(18, 16);
+  display.setTextSize(2);
+  display.print(String(currentTemperature, 1));
+  
+  display.setTextSize(2);
+  int16_t x1, y1;
+  uint16_t w, h;
+  display.getTextBounds(solarStatus, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor(SCREEN_WIDTH - w, 16);
+  display.print(solarStatus);
+
+  display.setCursor(0, 40);
+  display.setTextSize(1);
+  display.print("O");
+  display.setCursor(18, 40);
+  display.setTextSize(2);
+  display.print(String(outdoorTemp, 1));
+  
+  String powerString = String(currentPower, 2);
+  display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
+  display.setCursor(SCREEN_WIDTH - w, 40);
+  display.setTextSize(2);
+  display.print(powerString);
+  
+  display.display();
+}
+
 void setup() {
   setCpuFrequencyMhz(80);
+  
+  Wire.begin(OLED_SDA, OLED_SCL);
+  if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    for(;;);
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Booting...");
+  display.display();
+  delay(1000);
+
   WiFi.onEvent(onWiFiEvent);
   WiFi.config(staticIP, gateway, subnet);
-  WiFi.begin(ssid);
   
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("Connecting to WiFi...");
+  display.display();
+  WiFi.begin(ssid);
+
+  int attempt = 0;
+  while (WiFi.status() != WL_CONNECTED && attempt < 20) {
+    delay(500);
+    attempt++;
+  }
+  
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  if (WiFi.status() == WL_CONNECTED) {
+    display.println("WiFi Connected!");
+    display.print("IP: ");
+    display.println(WiFi.localIP());
+  } else {
+    display.println("WiFi Failed!");
+    display.println("Using static IP");
+  }
+  display.display();
+  delay(2000);
+
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
   preferences.begin("bilik-config", false);
@@ -297,6 +439,12 @@ void setup() {
   server.on("/set_nightled_pwm", handleSetNightledPWM);
   server.on("/state", handleState);
   server.on("/i_temp", handleITemp);
+  
+  display.clearDisplay();
+  display.setCursor(0, 0);
+  display.println("Setup Complete!");
+  display.display();
+  delay(1000);
 }
 
 void loop() {
@@ -329,6 +477,11 @@ void loop() {
     lastSensorReadTime = millis();
   }
 
+  if (millis() - lastExternalDataFetch >= externalDataFetchInterval) {
+    fetchExternalData();
+    lastExternalDataFetch = millis();
+  }
+
   if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
     fanOverride = false;
     fanIsOnAutomatic = true;
@@ -359,11 +512,9 @@ void loop() {
   if (fanOverride) {
     digitalWrite(FAN_PIN, HIGH);
   } else if (scheduledFanActive) {
-    // Fan is already being handled by the scheduled logic
   } else if (fanIsOnAutomatic && !sensorIsFaulty) {
     if (masterswState == 1) {
       if (millis() - lastFanStateChange < fanCooldownDelay) {
-        // Do nothing, cooldown period is active.
       }
       else if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) {
         digitalWrite(FAN_PIN, HIGH);
@@ -414,6 +565,18 @@ void loop() {
   }
 
   controlNightLED();
+  
+  static unsigned long lastDisplayUpdate = 0;
+  const unsigned long displayUpdateInterval = 1000;
+  if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
+      if (masterswState == 1) {
+        updateDisplay();
+      } else {
+        display.clearDisplay();
+        display.display();
+      }
+      lastDisplayUpdate = millis();
+  }
 
   yield();
 }
