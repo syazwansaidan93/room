@@ -268,7 +268,6 @@ void setup() {
   preferences.end();
 
   pinMode(MAINLED_PIN, OUTPUT);
-  pinMode(NIGHTLED_PIN, OUTPUT);
   pinMode(FAN_PIN, OUTPUT);
   pinMode(ACTIVITY_LED_PIN, OUTPUT);
   pinMode(MAINLEDSW_PIN, INPUT_PULLUP);
@@ -286,6 +285,7 @@ void setup() {
   tempSensorAddress[6] = 0x00;
   tempSensorAddress[7] = 0xF5;
   
+  // Use ledcAttach to set up PWM on the specific pin
   ledcAttach(NIGHTLED_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
 
   server.on("/mainledswState", handleMainToggle);
