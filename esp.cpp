@@ -271,6 +271,7 @@ void controlNightLED() {
 }
 
 void fetchExternalData() {
+  triggerBlink();
   HTTPClient http;
 
   http.begin("http://192.168.1.3/api/r/latest");
