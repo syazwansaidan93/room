@@ -275,36 +275,19 @@ void fetchExternalData() {
   triggerBlink();
   HTTPClient http;
 
-  http.begin("http://192.168.1.3/api/r/latest");
+  http.begin("http://192.168.1.3/api/esp");
   int httpCode = http.GET();
   if (httpCode > 0) {
     String payload = http.getString();
     StaticJsonDocument<100> doc;
     deserializeJson(doc, payload);
-    if (doc.containsKey("relay_status")) {
-      solarStatus = doc["relay_status"].as<String>();
+    
+    if (doc.containsKey("relay_state")) {
+      solarStatus = doc["relay_state"].as<String>();
     }
-  }
-  http.end();
-
-  http.begin("http://192.168.1.3/api/o/latest");
-  httpCode = http.GET();
-  if (httpCode > 0) {
-    String payload = http.getString();
-    StaticJsonDocument<100> doc;
-    deserializeJson(doc, payload);
-    if (doc.containsKey("outdoor")) {
-      outdoorTemp = doc["outdoor"].as<float>();
+    if (doc.containsKey("outdoor_temp_C")) {
+      outdoorTemp = doc["outdoor_temp_C"].as<float>();
     }
-  }
-  http.end();
-  
-  http.begin("http://192.168.1.3/api/s/latest");
-  httpCode = http.GET();
-  if (httpCode > 0) {
-    String payload = http.getString();
-    StaticJsonDocument<100> doc;
-    deserializeJson(doc, payload);
     if (doc.containsKey("power_mW")) {
       currentPower = doc["power_mW"].as<float>() / 1000.0;
     }
