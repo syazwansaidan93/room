@@ -62,6 +62,7 @@ const unsigned long fanCooldownDelay = 5000;
 bool fanIsOnAutomatic = true;
 bool serverStarted = false;
 bool isAutoToggleDone = false;
+bool isOledOn = true;
 
 Preferences preferences;
 WebServer server(80);
@@ -569,7 +570,19 @@ void loop() {
   
   static unsigned long lastDisplayUpdate = 0;
   const unsigned long displayUpdateInterval = 1000;
-  if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
+  
+  if (shouldNightLedBeOn()) {
+    if (isOledOn) {
+      display.clearDisplay();
+      display.display();
+      isOledOn = false;
+    }
+  } else {
+    if (!isOledOn) {
+      display.display();
+      isOledOn = true;
+    }
+    if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
       if (masterswState == 1) {
         updateDisplay();
       } else {
@@ -577,7 +590,8 @@ void loop() {
         display.display();
       }
       lastDisplayUpdate = millis();
+    }
   }
-
+  
   yield();
 }
