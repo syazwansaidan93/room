@@ -81,7 +81,7 @@ String solarStatus = "N/A";
 float outdoorTemp = 0.0;
 float currentPower = 0.0;
 unsigned long lastExternalDataFetch = 0;
-const unsigned long externalDataFetchInterval = 10000;
+const unsigned long externalDataFetchInterval = 30000;
 
 void triggerBlink() {
   digitalWrite(ACTIVITY_LED_PIN, HIGH);
@@ -356,7 +356,6 @@ void setup() {
   display.setCursor(0, 0);
   display.println("Booting...");
   display.display();
-  delay(1000);
 
   WiFi.onEvent(onWiFiEvent);
   WiFi.config(staticIP, gateway, subnet);
@@ -367,10 +366,10 @@ void setup() {
   display.display();
   WiFi.begin(ssid);
 
-  int attempt = 0;
-  while (WiFi.status() != WL_CONNECTED && attempt < 20) {
-    delay(500);
-    attempt++;
+  unsigned long startTime = millis();
+  const unsigned long wifiTimeout = 10000;
+  while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < wifiTimeout) {
+    // Non-blocking wait for Wi-Fi connection
   }
   
   display.clearDisplay();
@@ -384,7 +383,6 @@ void setup() {
     display.println("Using static IP");
   }
   display.display();
-  delay(2000);
 
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
@@ -429,7 +427,6 @@ void setup() {
   display.setCursor(0, 0);
   display.println("Setup Complete!");
   display.display();
-  delay(1000);
 }
 
 void loop() {
