@@ -303,8 +303,8 @@ void updateDisplay() {
   display.setTextSize(1);
   display.print("WiFi: [");
   long rssi = WiFi.RSSI();
-  int bars = map(rssi, -100, -30, 0, 12);
-  for (int i = 0; i < 12; i++) {
+  int bars = map(rssi, -100, -30, 0, 14);
+  for (int i = 0; i < 14; i++) {
     if (i < bars) {
       display.print("=");
     } else {
