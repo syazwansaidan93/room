@@ -61,7 +61,8 @@ unsigned long lastFanStateChange = 0;
 const unsigned long fanCooldownDelay = 5000;
 bool fanIsOnAutomatic = true;
 bool serverStarted = false;
-bool isAutoToggleDone = false;
+bool isEveningToggleDone = false;
+bool isMorningToggleDone = false;
 bool isOledOn = true;
 
 Preferences preferences;
@@ -303,8 +304,8 @@ void updateDisplay() {
   display.setTextSize(1);
   display.print("WiFi: [");
   long rssi = WiFi.RSSI();
-  int bars = map(rssi, -100, -30, 0, 13);
-  for (int i = 0; i < 13; i++) {
+  int bars = map(rssi, -100, -30, 0, 14);
+  for (int i = 0; i < 14; i++) {
     if (i < bars) {
       display.print("=");
     } else {
@@ -459,7 +460,7 @@ void loop() {
     lastSensorReadTime = millis();
   }
 
-  if (masterswState == 1 && millis() - lastExternalDataFetch >= externalDataFetchInterval) {
+  if (masterswState == 1 && !shouldNightLedBeOn() && millis() - lastExternalDataFetch >= externalDataFetchInterval) {
     fetchExternalData();
     lastExternalDataFetch = millis();
   }
@@ -529,14 +530,21 @@ void loop() {
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
-    if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 0 && !isAutoToggleDone) {
+    if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 0 && !isEveningToggleDone) {
       if (mainledswState == 0) {
         mainledswState = 1;
-        isAutoToggleDone = true;
+        isEveningToggleDone = true;
       }
     }
-    if (timeinfo.tm_hour < 19) {
-      isAutoToggleDone = false;
+    if (timeinfo.tm_hour == 7 && timeinfo.tm_min == 0 && !isMorningToggleDone) {
+      if (mainledswState == 1) {
+        mainledswState = 0;
+        isMorningToggleDone = true;
+      }
+    }
+    if (timeinfo.tm_hour > 7 && timeinfo.tm_hour < 19) {
+      isEveningToggleDone = false;
+      isMorningToggleDone = false;
     }
   }
 
