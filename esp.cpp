@@ -335,7 +335,7 @@ void updateDisplay() {
   display.setTextSize(2);
   display.print(String(outdoorTemp, 1));
   
-  String powerString = String(currentPower, 2);
+  String powerString = String(currentPower, 1);
   display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
   display.setCursor(SCREEN_WIDTH - w, 40);
   display.setTextSize(2);
