@@ -24,6 +24,7 @@
 #define OLED_SDA 8
 #define OLED_SCL 9
 #define OLED_ADDR 0x3C
+#define TOUCH_SENSOR_PIN 10
 
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
@@ -63,7 +64,9 @@ bool fanIsOnAutomatic = true;
 bool serverStarted = false;
 bool isEveningToggleDone = false;
 bool isMorningToggleDone = false;
-bool isOledOn = true;
+bool isOledActive = false;
+unsigned long oledOnTime = 0;
+const unsigned long oledActiveDuration = 10000;
 
 Preferences preferences;
 WebServer server(80);
@@ -370,7 +373,6 @@ void setup() {
   unsigned long startTime = millis();
   const unsigned long wifiTimeout = 10000;
   while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < wifiTimeout) {
-    // Non-blocking wait for Wi-Fi connection
   }
   
   display.clearDisplay();
@@ -399,6 +401,7 @@ void setup() {
   pinMode(ACTIVITY_LED_PIN, OUTPUT);
   pinMode(MAINLEDSW_PIN, INPUT_PULLUP);
   pinMode(MASTERSW_PIN, INPUT_PULLUP);
+  pinMode(TOUCH_SENSOR_PIN, INPUT);
 
   sensors.begin();
   sensors.setResolution(tempSensorAddress, 12);
@@ -428,6 +431,8 @@ void setup() {
   display.setCursor(0, 0);
   display.println("Setup Complete!");
   display.display();
+  delay(1000);
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 void loop() {
@@ -442,6 +447,32 @@ void loop() {
   
   server.handleClient();
 
+  int touchValue = digitalRead(TOUCH_SENSOR_PIN);
+  if (touchValue == HIGH && !isOledActive) {
+    isOledActive = true;
+    oledOnTime = millis();
+    display.ssd1306_command(SSD1306_DISPLAYON);
+    fetchExternalData();
+    updateDisplay();
+  }
+
+  if (isOledActive) {
+    if (millis() - oledOnTime >= oledActiveDuration) {
+      display.clearDisplay();
+      display.display();
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      isOledActive = false;
+    }
+  }
+
+  static unsigned long lastDisplayUpdate = 0;
+  const unsigned long displayUpdateInterval = 1000;
+  
+  if (isOledActive && millis() - lastDisplayUpdate >= displayUpdateInterval) {
+    updateDisplay();
+    lastDisplayUpdate = millis();
+  }
+  
   if (millis() - lastSensorReadTime >= sensorReadInterval && masterswState == 1 && fanIsOnAutomatic) {
     triggerBlink();
     sensors.requestTemperatures();
@@ -458,11 +489,6 @@ void loop() {
       }
     }
     lastSensorReadTime = millis();
-  }
-
-  if (masterswState == 1 && !shouldNightLedBeOn() && millis() - lastExternalDataFetch >= externalDataFetchInterval) {
-    fetchExternalData();
-    lastExternalDataFetch = millis();
   }
 
   if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
@@ -555,31 +581,6 @@ void loop() {
   }
 
   controlNightLED();
-  
-  static unsigned long lastDisplayUpdate = 0;
-  const unsigned long displayUpdateInterval = 1000;
-  
-  if (shouldNightLedBeOn()) {
-    if (isOledOn) {
-      display.clearDisplay();
-      display.display();
-      isOledOn = false;
-    }
-  } else {
-    if (!isOledOn) {
-      display.display();
-      isOledOn = true;
-    }
-    if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
-      if (masterswState == 1) {
-        updateDisplay();
-      } else {
-        display.clearDisplay();
-        display.display();
-      }
-      lastDisplayUpdate = millis();
-    }
-  }
   
   yield();
 }
