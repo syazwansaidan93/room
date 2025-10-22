@@ -20,7 +20,7 @@
 #define ACTIVITY_LED_PIN 0
 
 #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
+#define SCREEN_HEIGHT 32 // Changed to 32
 #define OLED_SDA 8
 #define OLED_SCL 9
 #define OLED_ADDR 0x3C
@@ -303,6 +303,7 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
+  // Row 1: WiFi Status (Size 1, Y=0)
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.print("WiFi: [");
@@ -317,30 +318,19 @@ void updateDisplay() {
   }
   display.println("]");
   
-  display.setCursor(0, 16);
-  display.setTextSize(1);
-  display.print("I");
-  display.setCursor(18, 16);
-  display.setTextSize(2);
-  display.print(String(currentTemperature, 1));
+  // Row 2: Solar Status (Left) and Current Power (Right) (Size 2, Y=16)
   
+  // Solar Status (Left aligned)
+  display.setCursor(0, 16);
   display.setTextSize(2);
-  int16_t x1, y1;
-  uint16_t w, h;
-  display.getTextBounds(solarStatus, 0, 0, &x1, &y1, &w, &h);
-  display.setCursor(SCREEN_WIDTH - w, 16);
   display.print(solarStatus);
 
-  display.setCursor(0, 40);
-  display.setTextSize(1);
-  display.print("O");
-  display.setCursor(18, 40);
-  display.setTextSize(2);
-  display.print(String(outdoorTemp, 1));
-  
-  String powerString = String(currentPower, 1);
+  // Current Power (Right aligned)
+  String powerString = String(currentPower, 1) + "W";
+  int16_t x1, y1;
+  uint16_t w, h;
   display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
-  display.setCursor(SCREEN_WIDTH - w, 40);
+  display.setCursor(SCREEN_WIDTH - w, 16);
   display.setTextSize(2);
   display.print(powerString);
   
