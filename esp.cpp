@@ -72,6 +72,8 @@ bool isOledActive = false;
 unsigned long oledOnTime = 0;
 const unsigned long oledActiveDuration = 10000;
 bool isTempStatusDisplay = false;
+unsigned long masterSwOledDisplayStartTime = 0;
+const unsigned long masterSwOledDisplayDuration = 5000;
 
 Preferences preferences;
 WebServer server(80);
@@ -89,6 +91,12 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 String solarStatus = "N/A";
 float outdoorTemp = 0.0;
 float currentPower = 0.0;
+
+// Variables for the scheduled fan cycle
+static unsigned long lastScheduledFanToggle = 0;
+static bool scheduledFanActive = false;
+const unsigned long fanScheduleInterval = 15 * 60 * 1000;
+const unsigned long fanScheduleDuration = 1 * 60 * 1000;
 
 
 void triggerBlink() {
@@ -137,7 +145,18 @@ void handleMainToggle() {
 
 void handleMasterToggle() {
   triggerBlink();
+  
+  int oldMasterswState = masterswState;
   masterswState = 1 - masterswState;
+  
+  if (!fanOverride && oldMasterswState != masterswState) {
+    masterSwOledDisplayStartTime = millis();
+    if (!isOledActive) {
+      isOledActive = true;
+      display.ssd1306_command(SSD1306_DISPLAYON);
+    }
+  }
+  
   String response = "Master Switch state is now: " + String(masterswState);
   server.send(200, "text/plain", response);
 }
@@ -195,6 +214,7 @@ void handleFanOn30m() {
     oledOnTime = millis();
     fetchExternalData();
     isTempStatusDisplay = false;
+    masterSwOledDisplayStartTime = 0; 
     
     server.send(200, "text/plain", "Fan turned on for 30 minutes. Automatic mode is suspended.");
   } else {
@@ -211,7 +231,7 @@ void handleFanOff() {
     fanOverride = false;
     fanIsOnAutomatic = true;
     
-    if (isOledActive) {
+    if (isOledActive && masterSwOledDisplayStartTime == 0) {
       display.clearDisplay();
       display.display();
       display.ssd1306_command(SSD1306_DISPLAYOFF);
@@ -341,7 +361,21 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  if (fanOverride && !isTempStatusDisplay) {
+  // Priority 1: Display Master Switch Change
+  if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
+      String masterStateStr = masterswState == 1 ? "SW ON" : "SW OFF";
+      display.setTextSize(3);
+      display.setCursor(0, 5);
+      
+      int16_t x1, y1;
+      uint16_t w, h;
+      display.getTextBounds(masterStateStr, 0, 0, &x1, &y1, &w, &h);
+      display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
+      display.print(masterStateStr);
+      
+  } 
+  // Priority 2: Fan Override Countdown
+  else if (fanOverride) {
     unsigned long elapsed = millis() - fanOverrideStartTime;
     unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
     
@@ -364,7 +398,9 @@ void updateDisplay() {
     if (seconds < 10) display.print("0");
     display.print(seconds);
     
-  } else {
+  } 
+  // Priority 3: Normal Status Cycling
+  else {
     
     display.setCursor(0, 0);
     display.setTextSize(1);
@@ -531,45 +567,54 @@ void loop() {
   
   server.handleClient();
 
+  // --- OLED Activation/Deactivation Logic ---
+  bool isMasterSwDisplayActive = (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration);
+  bool isOverrideDisplayActive = fanOverride;
+  
   int touchValue = digitalRead(TOUCH_SENSOR_PIN);
   if (touchValue == HIGH) {
     if (!isOledActive) {
       isOledActive = true;
-      oledOnTime = millis();
       display.ssd1306_command(SSD1306_DISPLAYON);
-      fetchExternalData();
-      isTempStatusDisplay = !fanOverride;
-    } else if (fanOverride) {
-      isTempStatusDisplay = true;
-      oledOnTime = millis();
-      fetchExternalData();
-    } else {
-      oledOnTime = millis();
-      fetchExternalData();
     }
+    oledOnTime = millis();
+    masterSwOledDisplayStartTime = 0;
+    fetchExternalData();
+    isTempStatusDisplay = !fanOverride;
   }
 
-  if (isOledActive) {
-    if (fanOverride && isTempStatusDisplay) {
-      if (millis() - oledOnTime >= oledActiveDuration) {
-        isTempStatusDisplay = false;
-        oledOnTime = millis();
+  // Master Switch Display Auto-Off/Activation
+  if (isMasterSwDisplayActive) {
+      if (!isOledActive) {
+          isOledActive = true;
+          display.ssd1306_command(SSD1306_DISPLAYON);
       }
-    } else if (!fanOverride) {
-      if (millis() - oledOnTime >= oledActiveDuration) {
-        display.clearDisplay();
-        display.display();
-        display.ssd1306_command(SSD1306_DISPLAYOFF);
-        isOledActive = false;
-        isTempStatusDisplay = false;
-      }
+  } else if (masterSwOledDisplayStartTime != 0) {
+      masterSwOledDisplayStartTime = 0;
+  }
+
+  // Regular OLED Auto-Off
+  if (isOledActive && !isMasterSwDisplayActive && !isOverrideDisplayActive) {
+    if (millis() - oledOnTime >= oledActiveDuration) {
+      display.clearDisplay();
+      display.display();
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      isOledActive = false;
+      isTempStatusDisplay = false;
     }
   }
+  
+  // Override OLED Auto-Off (Only if override finishes)
+  if (isOledActive && isOverrideDisplayActive) {
+    // Keep it on while override is active, or use it for status cycling after override finishes
+  }
+  // --- End OLED Activation/Deactivation Logic ---
+
 
   static unsigned long lastDisplayUpdate = 0;
   const unsigned long displayUpdateInterval = 1000;
   
-  if (isOledActive && millis() - lastDisplayUpdate >= displayUpdateInterval) {
+  if ((isOledActive || isMasterSwDisplayActive) && (millis() - lastDisplayUpdate >= displayUpdateInterval)) {
     updateDisplay();
     lastDisplayUpdate = millis();
   }
@@ -592,11 +637,18 @@ void loop() {
     lastSensorReadTime = millis();
   }
 
+  // --- FAN OVERRIDE TIMEOUT CHECK (Includes the FIX) ---
   if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
     fanOverride = false;
     fanIsOnAutomatic = true;
-    
-    if (isOledActive) {
+
+    // FIX: Reset the scheduled fan timer to prevent immediate triggering
+    // after the override is finished. This enforces the 15-minute wait.
+    lastScheduledFanToggle = millis();
+    scheduledFanActive = false;
+
+    // Check if the display should still be active due to a switch press
+    if (isOledActive && masterSwOledDisplayStartTime == 0) {
       display.clearDisplay();
       display.display();
       display.ssd1306_command(SSD1306_DISPLAYOFF);
@@ -604,19 +656,18 @@ void loop() {
       isTempStatusDisplay = false;
     }
   }
+  // --- END FAN OVERRIDE TIMEOUT CHECK ---
 
-  static unsigned long lastScheduledFanToggle = 0;
-  static bool scheduledFanActive = false;
-  const unsigned long fanScheduleInterval = 15 * 60 * 1000;
-  const unsigned long fanScheduleDuration = 1 * 60 * 1000;
-
+  // --- 15 MINUTE SCHEDULED FAN CYCLE LOGIC ---
   if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
     if (scheduledFanActive) {
+      // Fan is in the 1-minute ON phase
       if (millis() - lastScheduledFanToggle >= fanScheduleDuration) {
         digitalWrite(FAN_PIN, LOW);
         scheduledFanActive = false;
       }
     } else {
+      // Fan is in the 14-minute OFF phase, waiting for next cycle start
       if (digitalRead(FAN_PIN) == LOW && millis() - lastScheduledFanToggle >= fanScheduleInterval) {
         digitalWrite(FAN_PIN, HIGH);
         lastScheduledFanToggle = millis();
@@ -624,13 +675,18 @@ void loop() {
       }
     }
   } else {
+    // Reset state if overall conditions are not met
     scheduledFanActive = false;
   }
+  // --- END 15 MINUTE SCHEDULED FAN CYCLE LOGIC ---
   
+  // --- FAN PIN CONTROL PRIORITY BLOCK ---
   if (fanOverride) {
-    digitalWrite(FAN_PIN, HIGH);
+    digitalWrite(FAN_PIN, HIGH); // Highest priority: Override ON
   } else if (scheduledFanActive) {
+    // Fan is controlled by the scheduled logic above (1 min ON or OFF)
   } else if (fanIsOnAutomatic && !sensorIsFaulty) {
+    // Automatic temperature control
     if (masterswState == 1) {
       if (millis() - lastFanStateChange < fanCooldownDelay) {
       }
@@ -646,9 +702,12 @@ void loop() {
       digitalWrite(FAN_PIN, LOW);
     }
   } else {
-    digitalWrite(FAN_PIN, LOW);
+    digitalWrite(FAN_PIN, LOW); // Default OFF state
   }
+  // --- END FAN PIN CONTROL PRIORITY BLOCK ---
 
+
+  // --- MAIN LED SWITCH DEBOUNCE ---
   static int rawMainledswReading = HIGH;
   static int lastStableMainledswReading = HIGH;
   int currentRawMainledswReading = digitalRead(MAINLEDSW_PIN);
@@ -672,7 +731,9 @@ void loop() {
       lastStableMainledswReading = HIGH;
     }
   }
+  // --- END MAIN LED SWITCH DEBOUNCE ---
 
+  // --- MASTER SWITCH DEBOUNCE ---
   static int rawMasterswReading = HIGH;
   static int lastStableMasterswReading = HIGH;
   int currentRawMasterswReading = digitalRead(MASTERSW_PIN);
@@ -686,7 +747,16 @@ void loop() {
     
     if (rawMasterswReading == LOW && lastStableMasterswReading == HIGH) {
       
+      int oldMasterswState = masterswState;
       masterswState = 1 - masterswState;
+      
+      if (!fanOverride && oldMasterswState != masterswState) {
+          masterSwOledDisplayStartTime = millis();
+          if (!isOledActive) {
+              isOledActive = true;
+              display.ssd1306_command(SSD1306_DISPLAYON);
+          }
+      }
       
       lastStableMasterswReading = LOW;
       
@@ -694,7 +764,10 @@ void loop() {
       lastStableMasterswReading = HIGH;
     }
   }
+  // --- END MASTER SWITCH DEBOUNCE ---
 
+
+  // --- TIME-BASED STATE TOGGLES ---
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
     if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 0 && !isEveningToggleDone) {
@@ -714,7 +787,9 @@ void loop() {
       isMorningToggleDone = false;
     }
   }
+  // --- END TIME-BASED STATE TOGGLES ---
 
+  // --- LED OUTPUTS ---
   if (mainledswState == 1 && masterswState == 1) {
     digitalWrite(MAINLED_PIN, HIGH);
   } else {
@@ -722,6 +797,7 @@ void loop() {
   }
 
   controlNightLED();
+  // --- END LED OUTPUTS ---
   
   yield();
 }
