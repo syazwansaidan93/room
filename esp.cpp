@@ -20,7 +20,7 @@
 #define ACTIVITY_LED_PIN 0
 
 #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32 // Changed to 32
+#define SCREEN_HEIGHT 32
 #define OLED_SDA 8
 #define OLED_SCL 9
 #define OLED_ADDR 0x3C
@@ -29,6 +29,10 @@
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
 #define LED_CHANNEL 0
+
+const unsigned long DEBOUNCE_DELAY = 50;
+unsigned long mainledswLastDebounceTime = 0;
+unsigned long masterswLastDebounceTime = 0;
 
 const char* ssid = "wifi_slow2";
 
@@ -41,9 +45,9 @@ const long gmtOffset_sec = 8 * 3600;
 const int daylightOffset_sec = 0;
 
 int mainledswState = 0;
-int lastMainledswReading = 0;
+int lastMainledswReading = HIGH; 
 int masterswState = 0;
-int lastMasterswReading = 0;
+int lastMasterswReading = HIGH; 
 int nightledPWMValue = 0;
 
 OneWire oneWireBus(DS18B20_PIN);
@@ -84,8 +88,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 String solarStatus = "N/A";
 float outdoorTemp = 0.0;
 float currentPower = 0.0;
-unsigned long lastExternalDataFetch = 0;
-const unsigned long externalDataFetchInterval = 30000;
+
 
 void triggerBlink() {
   digitalWrite(ACTIVITY_LED_PIN, HIGH);
@@ -226,10 +229,26 @@ bool shouldNightLedBeOn() {
 
 void handleITemp() {
   triggerBlink();
-  if (sensorIsFaulty) {
-    server.send(404, "text/plain", "Sensor is faulty.");
-  } else {
+  
+  sensors.requestTemperatures();
+  float temp = sensors.getTempC(tempSensorAddress);
+
+  if (temp != DEVICE_DISCONNECTED_C) {
+    currentTemperature = temp;
+    consecutiveFailedReads = 0;
+    sensorIsFaulty = false;
     server.send(200, "text/plain", String(currentTemperature));
+  } else {
+    consecutiveFailedReads++;
+    if (consecutiveFailedReads >= maxFailedReads) {
+      sensorIsFaulty = true;
+    }
+    
+    if (sensorIsFaulty) {
+      server.send(404, "text/plain", "Sensor is faulty.");
+    } else {
+      server.send(404, "text/plain", "Sensor is temporarily unavailable.");
+    }
   }
 }
 
@@ -303,7 +322,7 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // Row 1: WiFi Status (Size 1, Y=0)
+  // LINE 1: WiFi Bar
   display.setCursor(0, 0);
   display.setTextSize(1);
   display.print("WiFi: [");
@@ -317,22 +336,68 @@ void updateDisplay() {
     }
   }
   display.println("]");
-  
-  // Row 2: Solar Status (Left) and Current Power (Right) (Size 2, Y=16)
-  
-  // Solar Status (Left aligned)
-  display.setCursor(0, 16);
-  display.setTextSize(2);
-  display.print(solarStatus);
 
-  // Current Power (Right aligned)
-  String powerString = String(currentPower, 1) + "W";
-  int16_t x1, y1;
-  uint16_t w, h;
-  display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
-  display.setCursor(SCREEN_WIDTH - w, 16);
-  display.setTextSize(2);
-  display.print(powerString);
+  unsigned long timeActive = millis() - oledOnTime;
+  
+  if (timeActive < 5000) {
+    // Mode 1: Solar Info (0-5 seconds)
+    
+    // LINE 2 (y=16): Solar Status (Left) and Power (Right)
+    display.setCursor(0, 16);
+    display.setTextSize(2);
+    display.print(solarStatus);
+
+    String powerString = String(currentPower, 1) + "W";
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor(SCREEN_WIDTH - w, 16);
+    display.setTextSize(2);
+    display.print(powerString);
+    
+  } else {
+    // Mode 2: Temperature Info (5-10 seconds)
+    
+    // Indoor Temperature
+    
+    // "I:" Label (Size 1)
+    display.setCursor(0, 16);
+    display.setTextSize(1);
+    display.print("I:");
+    
+    // Indoor Temperature value (Size 2)
+    display.setCursor(15, 16);
+    display.setTextSize(2);
+    display.print(String(currentTemperature, 1));
+    
+    // Outdoor Temperature
+    
+    // Prepare strings for calculation
+    String tempValueString = String(outdoorTemp, 1);
+
+    int16_t x1, y1;
+    uint16_t w_value, h_value;
+    
+    // Calculate bounds for the size 2 value
+    display.setTextSize(2);
+    display.getTextBounds(tempValueString, 0, 0, &x1, &y1, &w_value, &h_value);
+
+    // Calculate start X for the value itself (right-aligned)
+    int x_value_start = SCREEN_WIDTH - w_value;
+    
+    // Calculate start X for the label "O:" (Size 1 is 12 pixels wide: 2 chars * 6 px/char)
+    int x_label_start = x_value_start - 12;
+
+    // Print label (Size 1)
+    display.setCursor(x_label_start, 16);
+    display.setTextSize(1);
+    display.print("O:");
+
+    // Print value (Size 2)
+    display.setCursor(x_value_start, 16);
+    display.setTextSize(2);
+    display.print(tempValueString);
+  }
   
   display.display();
 }
@@ -530,19 +595,51 @@ void loop() {
     digitalWrite(FAN_PIN, LOW);
   }
 
-  int currentMainledswReading = digitalRead(MAINLEDSW_PIN);
-  if (currentMainledswReading != lastMainledswReading && currentMainledswReading == LOW) {
-    if (masterswState == 1) {
-      mainledswState = 1 - mainledswState;
+  static int rawMainledswReading = HIGH;
+  static int lastStableMainledswReading = HIGH; 
+  int currentRawMainledswReading = digitalRead(MAINLEDSW_PIN);
+
+  if (currentRawMainledswReading != rawMainledswReading) {
+    mainledswLastDebounceTime = millis();
+    rawMainledswReading = currentRawMainledswReading;
+  }
+
+  if ((millis() - mainledswLastDebounceTime) > DEBOUNCE_DELAY) {
+    
+    if (rawMainledswReading == LOW && lastStableMainledswReading == HIGH) {
+      
+      if (masterswState == 1) {
+        mainledswState = 1 - mainledswState;
+      }
+      
+      lastStableMainledswReading = LOW;
+      
+    } else if (rawMainledswReading == HIGH) {
+      lastStableMainledswReading = HIGH;
     }
   }
-  lastMainledswReading = currentMainledswReading;
 
-  int currentMasterswReading = digitalRead(MASTERSW_PIN);
-  if (currentMasterswReading != lastMasterswReading && currentMasterswReading == LOW) {
-    masterswState = 1 - masterswState;
+  static int rawMasterswReading = HIGH;
+  static int lastStableMasterswReading = HIGH;
+  int currentRawMasterswReading = digitalRead(MASTERSW_PIN);
+
+  if (currentRawMasterswReading != rawMasterswReading) {
+    masterswLastDebounceTime = millis();
+    rawMasterswReading = currentRawMasterswReading;
   }
-  lastMasterswReading = currentMasterswReading;
+
+  if ((millis() - masterswLastDebounceTime) > DEBOUNCE_DELAY) {
+    
+    if (rawMasterswReading == LOW && lastStableMasterswReading == HIGH) {
+      
+      masterswState = 1 - masterswState;
+      
+      lastStableMasterswReading = LOW;
+      
+    } else if (rawMasterswReading == HIGH) {
+      lastStableMasterswReading = HIGH;
+    }
+  }
 
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
