@@ -71,7 +71,8 @@ bool isMorningToggleDone = false;
 bool isOledActive = false;
 unsigned long oledOnTime = 0;
 const unsigned long oledActiveDuration = 10000;
-bool isTempStatusDisplay = false;
+// isTempStatusDisplay = true means show temp/wifi status, false means show override countdown
+bool isTempStatusDisplay = false; 
 unsigned long masterSwOledDisplayStartTime = 0;
 const unsigned long masterSwOledDisplayDuration = 5000;
 
@@ -92,7 +93,6 @@ String solarStatus = "N/A";
 float outdoorTemp = 0.0;
 float currentPower = 0.0;
 
-// Variables for the scheduled fan cycle
 static unsigned long lastScheduledFanToggle = 0;
 static bool scheduledFanActive = false;
 const unsigned long fanScheduleInterval = 15 * 60 * 1000;
@@ -149,7 +149,7 @@ void handleMasterToggle() {
   int oldMasterswState = masterswState;
   masterswState = 1 - masterswState;
   
-  if (!fanOverride && oldMasterswState != masterswState) {
+  if (oldMasterswState != masterswState) {
     masterSwOledDisplayStartTime = millis();
     if (!isOledActive) {
       isOledActive = true;
@@ -213,7 +213,7 @@ void handleFanOn30m() {
     }
     oledOnTime = millis();
     fetchExternalData();
-    isTempStatusDisplay = false;
+    isTempStatusDisplay = false; 
     masterSwOledDisplayStartTime = 0; 
     
     server.send(200, "text/plain", "Fan turned on for 30 minutes. Automatic mode is suspended.");
@@ -361,7 +361,7 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // Priority 1: Display Master Switch Change
+  // Priority 1: Display Master Switch Change (SW ON/OFF)
   if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
       String masterStateStr = masterswState == 1 ? "SW ON" : "SW OFF";
       display.setTextSize(3);
@@ -375,7 +375,7 @@ void updateDisplay() {
       
   } 
   // Priority 2: Fan Override Countdown
-  else if (fanOverride) {
+  else if (fanOverride && !isTempStatusDisplay) {
     unsigned long elapsed = millis() - fanOverrideStartTime;
     unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
     
@@ -399,7 +399,8 @@ void updateDisplay() {
     display.print(seconds);
     
   } 
-  // Priority 3: Normal Status Cycling
+  // Priority 3: Normal Status Cycling (When override is OFF, OR when override is ON 
+  // but the user has triggered the temporary status display)
   else {
     
     display.setCursor(0, 0);
@@ -416,9 +417,11 @@ void updateDisplay() {
     }
     display.println("]");
 
+    // If fanOverride is active, isTempStatusDisplay is TRUE here, so we skip the time check and show status
     unsigned long timeActive = millis() - oledOnTime;
     
-    if (timeActive < 5000) {
+    if (timeActive < 5000 || fanOverride) { 
+      // Show Solar/Power status (5s cycle in normal mode, constant in override temp status mode)
       
       display.setCursor(0, 16);
       display.setTextSize(2);
@@ -433,6 +436,7 @@ void updateDisplay() {
       display.print(powerString);
       
     } else {
+      // Show Internal/Outdoor Temp status (Only in normal mode after 5s)
       
       display.setCursor(0, 16);
       display.setTextSize(1);
@@ -580,7 +584,14 @@ void loop() {
     oledOnTime = millis();
     masterSwOledDisplayStartTime = 0;
     fetchExternalData();
-    isTempStatusDisplay = !fanOverride;
+    
+    // If Fan Override is running, toggle the display between countdown and status.
+    if (fanOverride) {
+      isTempStatusDisplay = !isTempStatusDisplay; 
+    } else {
+      // Normal mode: Always show status for the duration
+      isTempStatusDisplay = true;
+    }
   }
 
   // Master Switch Display Auto-Off/Activation
@@ -588,6 +599,11 @@ void loop() {
       if (!isOledActive) {
           isOledActive = true;
           display.ssd1306_command(SSD1306_DISPLAYON);
+      }
+      // When Master Switch display is active, the temporary status is FALSE 
+      // to ensure we return to the COUNTDOWN if an override is running.
+      if (fanOverride) {
+          isTempStatusDisplay = false; 
       }
   } else if (masterSwOledDisplayStartTime != 0) {
       masterSwOledDisplayStartTime = 0;
@@ -604,9 +620,12 @@ void loop() {
     }
   }
   
-  // Override OLED Auto-Off (Only if override finishes)
-  if (isOledActive && isOverrideDisplayActive) {
-    // Keep it on while override is active, or use it for status cycling after override finishes
+  // Fan Override Status Timeout (Return to Countdown)
+  if (fanOverride && isTempStatusDisplay) {
+    // If we are showing the temporary status during override, time it out after 10s (oledActiveDuration)
+    if (millis() - oledOnTime >= oledActiveDuration) {
+      isTempStatusDisplay = false; // Return to countdown display
+    }
   }
   // --- End OLED Activation/Deactivation Logic ---
 
@@ -643,7 +662,6 @@ void loop() {
     fanIsOnAutomatic = true;
 
     // FIX: Reset the scheduled fan timer to prevent immediate triggering
-    // after the override is finished. This enforces the 15-minute wait.
     lastScheduledFanToggle = millis();
     scheduledFanActive = false;
 
@@ -661,13 +679,11 @@ void loop() {
   // --- 15 MINUTE SCHEDULED FAN CYCLE LOGIC ---
   if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
     if (scheduledFanActive) {
-      // Fan is in the 1-minute ON phase
       if (millis() - lastScheduledFanToggle >= fanScheduleDuration) {
         digitalWrite(FAN_PIN, LOW);
         scheduledFanActive = false;
       }
     } else {
-      // Fan is in the 14-minute OFF phase, waiting for next cycle start
       if (digitalRead(FAN_PIN) == LOW && millis() - lastScheduledFanToggle >= fanScheduleInterval) {
         digitalWrite(FAN_PIN, HIGH);
         lastScheduledFanToggle = millis();
@@ -675,18 +691,15 @@ void loop() {
       }
     }
   } else {
-    // Reset state if overall conditions are not met
     scheduledFanActive = false;
   }
   // --- END 15 MINUTE SCHEDULED FAN CYCLE LOGIC ---
   
   // --- FAN PIN CONTROL PRIORITY BLOCK ---
   if (fanOverride) {
-    digitalWrite(FAN_PIN, HIGH); // Highest priority: Override ON
+    digitalWrite(FAN_PIN, HIGH);
   } else if (scheduledFanActive) {
-    // Fan is controlled by the scheduled logic above (1 min ON or OFF)
   } else if (fanIsOnAutomatic && !sensorIsFaulty) {
-    // Automatic temperature control
     if (masterswState == 1) {
       if (millis() - lastFanStateChange < fanCooldownDelay) {
       }
@@ -702,7 +715,7 @@ void loop() {
       digitalWrite(FAN_PIN, LOW);
     }
   } else {
-    digitalWrite(FAN_PIN, LOW); // Default OFF state
+    digitalWrite(FAN_PIN, LOW);
   }
   // --- END FAN PIN CONTROL PRIORITY BLOCK ---
 
@@ -750,7 +763,8 @@ void loop() {
       int oldMasterswState = masterswState;
       masterswState = 1 - masterswState;
       
-      if (!fanOverride && oldMasterswState != masterswState) {
+      // Activate OLED on physical toggle regardless of fan override status
+      if (oldMasterswState != masterswState) {
           masterSwOledDisplayStartTime = millis();
           if (!isOledActive) {
               isOledActive = true;
