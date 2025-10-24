@@ -351,7 +351,10 @@ void updateDisplay() {
     
     display.setCursor(0, 0);
     display.setTextSize(1);
-    display.println("FAN OVERRIDE");
+    
+    String masterStateStr = masterswState == 1 ? "(MS ON)" : "(MS OFF)";
+    display.print("FAN OVERRIDE ");
+    display.println(masterStateStr);
     
     display.setCursor(0, 16);
     display.setTextSize(2);
