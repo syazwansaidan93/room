@@ -45,9 +45,9 @@ const long gmtOffset_sec = 8 * 3600;
 const int daylightOffset_sec = 0;
 
 int mainledswState = 0;
-int lastMainledswReading = HIGH; 
+int lastMainledswReading = HIGH;
 int masterswState = 0;
-int lastMasterswReading = HIGH; 
+int lastMasterswReading = HIGH;
 int nightledPWMValue = 0;
 
 OneWire oneWireBus(DS18B20_PIN);
@@ -71,6 +71,7 @@ bool isMorningToggleDone = false;
 bool isOledActive = false;
 unsigned long oledOnTime = 0;
 const unsigned long oledActiveDuration = 10000;
+bool isTempStatusDisplay = false;
 
 Preferences preferences;
 WebServer server(80);
@@ -186,6 +187,15 @@ void handleFanOn30m() {
     fanOverrideStartTime = millis();
     fanIsOnAutomatic = false;
     digitalWrite(FAN_PIN, HIGH);
+    
+    if (!isOledActive) {
+      isOledActive = true;
+      display.ssd1306_command(SSD1306_DISPLAYON);
+    }
+    oledOnTime = millis();
+    fetchExternalData();
+    isTempStatusDisplay = false;
+    
     server.send(200, "text/plain", "Fan turned on for 30 minutes. Automatic mode is suspended.");
   } else {
     server.send(400, "text/plain", "Cannot turn fan on. Master switch is off, fan is not in automatic mode, or fan is already on.");
@@ -200,6 +210,15 @@ void handleFanOff() {
     digitalWrite(FAN_PIN, LOW);
     fanOverride = false;
     fanIsOnAutomatic = true;
+    
+    if (isOledActive) {
+      display.clearDisplay();
+      display.display();
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      isOledActive = false;
+      isTempStatusDisplay = false;
+    }
+    
     server.send(200, "text/plain", "Fan turned off. Automatic mode is restored.");
   }
 }
@@ -322,81 +341,88 @@ void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
-  // LINE 1: WiFi Bar
-  display.setCursor(0, 0);
-  display.setTextSize(1);
-  display.print("WiFi: [");
-  long rssi = WiFi.RSSI();
-  int bars = map(rssi, -100, -30, 0, 13);
-  for (int i = 0; i < 13; i++) {
-    if (i < bars) {
-      display.print("=");
-    } else {
-      display.print(" ");
-    }
-  }
-  display.println("]");
-
-  unsigned long timeActive = millis() - oledOnTime;
-  
-  if (timeActive < 5000) {
-    // Mode 1: Solar Info (0-5 seconds)
+  if (fanOverride && !isTempStatusDisplay) {
+    unsigned long elapsed = millis() - fanOverrideStartTime;
+    unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
     
-    // LINE 2 (y=16): Solar Status (Left) and Power (Right)
+    long remainingSeconds = remainingTimeMs / 1000;
+    int minutes = remainingSeconds / 60;
+    int seconds = remainingSeconds % 60;
+    
+    display.setCursor(0, 0);
+    display.setTextSize(1);
+    display.println("FAN OVERRIDE");
+    
     display.setCursor(0, 16);
     display.setTextSize(2);
-    display.print(solarStatus);
-
-    String powerString = String(currentPower, 1) + "W";
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor(SCREEN_WIDTH - w, 16);
-    display.setTextSize(2);
-    display.print(powerString);
+    if (minutes < 10) display.print("0");
+    display.print(minutes);
+    display.print(":");
+    if (seconds < 10) display.print("0");
+    display.print(seconds);
     
   } else {
-    // Mode 2: Temperature Info (5-10 seconds)
     
-    // Indoor Temperature
-    
-    // "I:" Label (Size 1)
-    display.setCursor(0, 16);
+    display.setCursor(0, 0);
     display.setTextSize(1);
-    display.print("I:");
-    
-    // Indoor Temperature value (Size 2)
-    display.setCursor(15, 16);
-    display.setTextSize(2);
-    display.print(String(currentTemperature, 1));
-    
-    // Outdoor Temperature
-    
-    // Prepare strings for calculation
-    String tempValueString = String(outdoorTemp, 1);
+    display.print("WiFi: [");
+    long rssi = WiFi.RSSI();
+    int bars = map(rssi, -100, -30, 0, 13);
+    for (int i = 0; i < 13; i++) {
+      if (i < bars) {
+        display.print("=");
+      } else {
+        display.print(" ");
+      }
+    }
+    display.println("]");
 
-    int16_t x1, y1;
-    uint16_t w_value, h_value;
+    unsigned long timeActive = millis() - oledOnTime;
     
-    // Calculate bounds for the size 2 value
-    display.setTextSize(2);
-    display.getTextBounds(tempValueString, 0, 0, &x1, &y1, &w_value, &h_value);
+    if (timeActive < 5000) {
+      
+      display.setCursor(0, 16);
+      display.setTextSize(2);
+      display.print(solarStatus);
 
-    // Calculate start X for the value itself (right-aligned)
-    int x_value_start = SCREEN_WIDTH - w_value;
-    
-    // Calculate start X for the label "O:" (Size 1 is 12 pixels wide: 2 chars * 6 px/char)
-    int x_label_start = x_value_start - 12;
+      String powerString = String(currentPower, 1) + "W";
+      int16_t x1, y1;
+      uint16_t w, h;
+      display.getTextBounds(powerString, 0, 0, &x1, &y1, &w, &h);
+      display.setCursor(SCREEN_WIDTH - w, 16);
+      display.setTextSize(2);
+      display.print(powerString);
+      
+    } else {
+      
+      display.setCursor(0, 16);
+      display.setTextSize(1);
+      display.print("I:");
+      
+      display.setCursor(15, 16);
+      display.setTextSize(2);
+      display.print(String(currentTemperature, 1));
+      
+      String tempValueString = String(outdoorTemp, 1);
 
-    // Print label (Size 1)
-    display.setCursor(x_label_start, 16);
-    display.setTextSize(1);
-    display.print("O:");
+      int16_t x1, y1;
+      uint16_t w_value, h_value;
+      
+      display.setTextSize(2);
+      display.getTextBounds(tempValueString, 0, 0, &x1, &y1, &w_value, &h_value);
 
-    // Print value (Size 2)
-    display.setCursor(x_value_start, 16);
-    display.setTextSize(2);
-    display.print(tempValueString);
+      int x_value_start = SCREEN_WIDTH - w_value;
+      
+      int x_label_start = x_value_start - 12;
+
+      display.setCursor(x_label_start, 16);
+      display.setTextSize(1);
+      display.print("O:");
+
+      display.setCursor(x_value_start, 16);
+      display.setTextSize(2);
+      display.print(tempValueString);
+    }
   }
   
   display.display();
@@ -503,20 +529,37 @@ void loop() {
   server.handleClient();
 
   int touchValue = digitalRead(TOUCH_SENSOR_PIN);
-  if (touchValue == HIGH && !isOledActive) {
-    isOledActive = true;
-    oledOnTime = millis();
-    display.ssd1306_command(SSD1306_DISPLAYON);
-    fetchExternalData();
-    updateDisplay();
+  if (touchValue == HIGH) {
+    if (!isOledActive) {
+      isOledActive = true;
+      oledOnTime = millis();
+      display.ssd1306_command(SSD1306_DISPLAYON);
+      fetchExternalData();
+      isTempStatusDisplay = !fanOverride;
+    } else if (fanOverride) {
+      isTempStatusDisplay = true;
+      oledOnTime = millis();
+      fetchExternalData();
+    } else {
+      oledOnTime = millis();
+      fetchExternalData();
+    }
   }
 
   if (isOledActive) {
-    if (millis() - oledOnTime >= oledActiveDuration) {
-      display.clearDisplay();
-      display.display();
-      display.ssd1306_command(SSD1306_DISPLAYOFF);
-      isOledActive = false;
+    if (fanOverride && isTempStatusDisplay) {
+      if (millis() - oledOnTime >= oledActiveDuration) {
+        isTempStatusDisplay = false;
+        oledOnTime = millis();
+      }
+    } else if (!fanOverride) {
+      if (millis() - oledOnTime >= oledActiveDuration) {
+        display.clearDisplay();
+        display.display();
+        display.ssd1306_command(SSD1306_DISPLAYOFF);
+        isOledActive = false;
+        isTempStatusDisplay = false;
+      }
     }
   }
 
@@ -549,6 +592,14 @@ void loop() {
   if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
     fanOverride = false;
     fanIsOnAutomatic = true;
+    
+    if (isOledActive) {
+      display.clearDisplay();
+      display.display();
+      display.ssd1306_command(SSD1306_DISPLAYOFF);
+      isOledActive = false;
+      isTempStatusDisplay = false;
+    }
   }
 
   static unsigned long lastScheduledFanToggle = 0;
@@ -596,7 +647,7 @@ void loop() {
   }
 
   static int rawMainledswReading = HIGH;
-  static int lastStableMainledswReading = HIGH; 
+  static int lastStableMainledswReading = HIGH;
   int currentRawMainledswReading = digitalRead(MAINLEDSW_PIN);
 
   if (currentRawMainledswReading != rawMainledswReading) {
