@@ -15,7 +15,7 @@
 #define MAINLEDSW_PIN 2
 #define MASTERSW_PIN 3
 #define DS18B20_PIN 4
-#define OVERRIDE_SW_PIN 5 // NEW: Fan override switch pin
+#define OVERRIDE_SW_PIN 5
 #define FAN_PIN 6
 #define ACTIVITY_LED_PIN 0
 #define SCREEN_WIDTH 128
@@ -30,7 +30,7 @@
 const unsigned long DEBOUNCE_DELAY = 50;
 unsigned long mainledswLastDebounceTime = 0;
 unsigned long masterswLastDebounceTime = 0;
-unsigned long overrideSwLastDebounceTime = 0; // NEW: Debounce time for override switch
+unsigned long overrideSwLastDebounceTime = 0;
 const char* ssid = "wifi_slow2";
 IPAddress staticIP(192, 168, 1, 4);
 IPAddress gateway(192, 168, 1, 1);
@@ -63,10 +63,12 @@ bool isMorningToggleDone = false;
 bool isOledActive = false;
 unsigned long oledOnTime = 0;
 const unsigned long oledActiveDuration = 10000;
-// isTempStatusDisplay = true means show temp/wifi status, false means show override countdown
 bool isTempStatusDisplay = false; 
 unsigned long masterSwOledDisplayStartTime = 0;
 const unsigned long masterSwOledDisplayDuration = 5000;
+// NEW: For temporary error display on OLED
+unsigned long oledErrorDisplayStartTime = 0;
+const unsigned long oledErrorDisplayDuration = 5000;
 Preferences preferences;
 WebServer server(80);
 const int maxFailedReads = 5;
@@ -194,6 +196,14 @@ void handleFanOn30m() {
     
     server.send(200, "text/plain", "Fan turned on for 30 minutes. Automatic mode is suspended.");
   } else {
+    // START: Add OLED display for fan override failure
+    oledErrorDisplayStartTime = millis();
+    if (!isOledActive) {
+      isOledActive = true;
+      display.ssd1306_command(SSD1306_DISPLAYON);
+    }
+    oledOnTime = millis();
+    // END: Add OLED display for fan override failure
     server.send(400, "text/plain", "Cannot turn fan on. Master switch is off, fan is not in automatic mode, or fan is already on.");
   }
 }
@@ -321,8 +331,19 @@ void fetchExternalData() {
 void updateDisplay() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
-  // Priority 1: Display Master Switch Change (SW ON/OFF)
-  if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
+
+  // NEW Priority 0: Error Display (Highest Priority)
+  if (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration) {
+      String errorMsg = "Can't turn";
+      String errorMsg2 = "on fan 30m";
+      display.setTextSize(2);
+      display.setCursor(0, 0);
+      display.print(errorMsg);
+      display.setCursor(0, 16);
+      display.print(errorMsg2);
+  }
+  // Existing Priority 1: Display Master Switch Change (SW ON/OFF)
+  else if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
       String masterStateStr = masterswState == 1 ? "SW ON" : "SW OFF";
       display.setTextSize(3);
       display.setCursor(0, 5);
@@ -334,7 +355,7 @@ void updateDisplay() {
       display.print(masterStateStr);
       
   } 
-  // Priority 2: Fan Override Countdown
+  // Existing Priority 2: Fan Override Countdown
   else if (fanOverride && !isTempStatusDisplay) {
     unsigned long elapsed = millis() - fanOverrideStartTime;
     unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
@@ -359,8 +380,7 @@ void updateDisplay() {
     display.print(seconds);
     
   } 
-  // Priority 3: Normal Status Cycling (When override is OFF, OR when override is ON 
-  // but the user has triggered the temporary status display)
+  // Existing Priority 3: Normal Status Cycling
   else {
     
     display.setCursor(0, 0);
@@ -376,11 +396,9 @@ void updateDisplay() {
       }
     }
     display.println("]");
-    // If fanOverride is active, isTempStatusDisplay is TRUE here, so we skip the time check and show status
     unsigned long timeActive = millis() - oledOnTime;
     
     if (timeActive < 5000 || fanOverride) { 
-      // Show Solar/Power status (5s cycle in normal mode, constant in override temp status mode)
       
       display.setCursor(0, 16);
       display.setTextSize(2);
@@ -394,7 +412,6 @@ void updateDisplay() {
       display.print(powerString);
       
     } else {
-      // Show Internal/Outdoor Temp status (Only in normal mode after 5s)
       
       display.setCursor(0, 16);
       display.setTextSize(1);
@@ -474,7 +491,7 @@ void setup() {
   pinMode(MAINLEDSW_PIN, INPUT_PULLUP);
   pinMode(MASTERSW_PIN, INPUT_PULLUP);
   pinMode(TOUCH_SENSOR_PIN, INPUT);
-  pinMode(OVERRIDE_SW_PIN, INPUT_PULLUP); // NEW: Initialize override switch pin
+  pinMode(OVERRIDE_SW_PIN, INPUT_PULLUP);
   sensors.begin();
   sensors.setResolution(tempSensorAddress, 12);
   tempSensorAddress[0] = 0x28;
@@ -518,7 +535,8 @@ void loop() {
   // --- OLED Activation/Deactivation Logic ---
   bool isMasterSwDisplayActive = (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration);
   bool isOverrideDisplayActive = fanOverride;
-  
+  bool isErrorDisplayActive = (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration);
+
   int touchValue = digitalRead(TOUCH_SENSOR_PIN);
   if (touchValue == HIGH) {
     if (!isOledActive) {
@@ -527,6 +545,7 @@ void loop() {
     }
     oledOnTime = millis();
     masterSwOledDisplayStartTime = 0;
+    oledErrorDisplayStartTime = 0; // Cancel error display on user interaction
     fetchExternalData();
     
     // If Fan Override is running, toggle the display between countdown and status.
@@ -543,16 +562,15 @@ void loop() {
           isOledActive = true;
           display.ssd1306_command(SSD1306_DISPLAYON);
       }
-      // When Master Switch display is active, the temporary status is FALSE 
-      // to ensure we return to the COUNTDOWN if an override is running.
       if (fanOverride) {
           isTempStatusDisplay = false; 
       }
+      oledErrorDisplayStartTime = 0; // Override error if master switch is pressed
   } else if (masterSwOledDisplayStartTime != 0) {
       masterSwOledDisplayStartTime = 0;
   }
   // Regular OLED Auto-Off
-  if (isOledActive && !isMasterSwDisplayActive && !isOverrideDisplayActive) {
+  if (isOledActive && !isMasterSwDisplayActive && !isOverrideDisplayActive && !isErrorDisplayActive) {
     if (millis() - oledOnTime >= oledActiveDuration) {
       display.clearDisplay();
       display.display();
@@ -562,18 +580,22 @@ void loop() {
     }
   }
   
+  // Handle error timer expiry
+  if (oledErrorDisplayStartTime != 0 && !isErrorDisplayActive) {
+      oledErrorDisplayStartTime = 0;
+  }
+
   // Fan Override Status Timeout (Return to Countdown)
   if (fanOverride && isTempStatusDisplay) {
-    // If we are showing the temporary status during override, time it out after 10s (oledActiveDuration)
     if (millis() - oledOnTime >= oledActiveDuration) {
-      isTempStatusDisplay = false; // Return to countdown display
+      isTempStatusDisplay = false;
     }
   }
   // --- End OLED Activation/Deactivation Logic ---
   static unsigned long lastDisplayUpdate = 0;
   const unsigned long displayUpdateInterval = 1000;
   
-  if ((isOledActive || isMasterSwDisplayActive) && (millis() - lastDisplayUpdate >= displayUpdateInterval)) {
+  if ((isOledActive || isMasterSwDisplayActive || isErrorDisplayActive) && (millis() - lastDisplayUpdate >= displayUpdateInterval)) {
     updateDisplay();
     lastDisplayUpdate = millis();
   }
@@ -598,10 +620,8 @@ void loop() {
   if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
     fanOverride = false;
     fanIsOnAutomatic = true;
-    // FIX: Reset the scheduled fan timer to prevent immediate triggering
     lastScheduledFanToggle = millis();
     scheduledFanActive = false;
-    // Check if the display should still be active due to a switch press
     if (isOledActive && masterSwOledDisplayStartTime == 0) {
       display.clearDisplay();
       display.display();
@@ -691,7 +711,6 @@ void loop() {
       int oldMasterswState = masterswState;
       masterswState = 1 - masterswState;
       
-      // Activate OLED on physical toggle regardless of fan override status
       if (oldMasterswState != masterswState) {
           masterSwOledDisplayStartTime = millis();
           if (!isOledActive) {
@@ -707,7 +726,7 @@ void loop() {
     }
   }
   // --- END MASTER SWITCH DEBOUNCE ---
-  // --- OVERRIDE SWITCH DEBOUNCE (GPIO 5) --- // NEW LOGIC BLOCK
+  // --- OVERRIDE SWITCH DEBOUNCE (GPIO 5) ---
   static int rawOverrideSwReading = HIGH;
   static int lastStableOverrideSwReading = HIGH;
   int currentRawOverrideSwReading = digitalRead(OVERRIDE_SW_PIN);
@@ -720,14 +739,13 @@ void loop() {
   if ((millis() - overrideSwLastDebounceTime) > DEBOUNCE_DELAY) {
 
     if (rawOverrideSwReading == LOW && lastStableOverrideSwReading == HIGH) {
-      triggerBlink(); // Always blink on physical button press
+      triggerBlink();
 
       if (fanOverride) {
         // Mode 1: Override is ON -> Turn OFF and return to automatic
         digitalWrite(FAN_PIN, LOW);
         fanOverride = false;
         fanIsOnAutomatic = true;
-        // Turn off OLED if it was only on for override countdown
         if (isOledActive && masterSwOledDisplayStartTime == 0) {
           display.clearDisplay();
           display.display();
@@ -738,8 +756,6 @@ void loop() {
 
       } else {
         // Mode 2: Override is OFF -> Turn ON for 30 minutes (if conditions met)
-
-        // Check conditions: Master ON, currently in Auto mode, Fan is currently OFF
         if (masterswState == 1 && fanIsOnAutomatic == true && digitalRead(FAN_PIN) == LOW) {
           fanOverride = true;
           fanOverrideStartTime = millis();
@@ -752,8 +768,17 @@ void loop() {
           }
           oledOnTime = millis();
           fetchExternalData(); 
-          isTempStatusDisplay = false; // Start in countdown mode
+          isTempStatusDisplay = false;
           masterSwOledDisplayStartTime = 0;
+        } else {
+          // START: Physical button failure logic
+          oledErrorDisplayStartTime = millis();
+          if (!isOledActive) {
+            isOledActive = true;
+            display.ssd1306_command(SSD1306_DISPLAYON);
+          }
+          oledOnTime = millis();
+          // END: Physical button failure logic
         }
       }
       
