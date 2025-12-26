@@ -3,259 +3,428 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bilik</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Bilik Control</title>
+    <link href="./output.css" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0f172a;
-            color: #e2e8f0;
+        @keyframes fadeInScale {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
         }
+        .main-card {
+          animation: fadeInScale 0.5s ease-out forwards;
+        }
+        .toggle-btn, .fan-button, .save-btn {
+          transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+        .toggle-btn:hover, .fan-button:hover, .save-btn:hover {
+          transform: translateY(-2px) scale(1.02);
+          box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+        .toggle-btn:active, .fan-button:active, .save-btn:active {
+          transform: scale(0.98);
+          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        .status-box {
+          transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+        }
+        .status-box:hover {
+          transform: translateY(-2px) scale(1.02);
+          box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+          filter: brightness(1.05);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 2rem;
+            border-radius: 1rem;
+            max-width: 90%;
+            width: 400px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            transform: translateY(-20px);
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .modal-overlay.open .modal-content {
+            transform: translateY(0);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+            border-radius: 1rem;
+        }
+        .glass-bg {
+            background: linear-gradient(135deg, rgba(100, 116, 139, 0.8), rgba(255, 255, 255, 0.2));
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+        }
+        .status-box {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(15px);
+            border-radius: 1rem;
+        }
+        .multi-tone-gradient {
+            background: linear-gradient(135deg, #4F46E5, #8B5CF6, #EC4899);
+        }
+        /* Dark Mode Styles */
+        .dark-mode {
+            background: linear-gradient(135deg, #0D1117, #161B22, #222A36);
+        }
+        .dark-mode .main-card, .dark-mode .glass-card, .dark-mode .status-box {
+            background: rgba(0, 0, 0, 0.15);
+            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        }
+        .dark-mode .modal-content {
+            background: rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .dark-mode .text-white { color: #f9fafb; }
+        .dark-mode .text-gray-200 { color: #A0AEC0; }
+        .dark-mode .bg-gradient-to-r {
+            background-image: linear-gradient(to right, #1a202c, #2d3748);
+        }
+
+        /* Custom transparent button styles */
+        .btn-red { background-color: rgba(239, 68, 68, 0.7); }
+        .btn-red:hover { background-color: rgba(220, 38, 38, 0.8); }
+        .btn-green { background-color: rgba(34, 197, 94, 0.7); }
+        .btn-green:hover { background-color: rgba(22, 163, 74, 0.8); }
+        .btn-indigo { background-color: rgba(79, 70, 229, 0.7); }
+        .btn-indigo:hover { background-color: rgba(67, 56, 202, 0.8); }
+        .btn-blue { background-color: rgba(37, 99, 235, 0.7); }
+        .btn-blue:hover { background-color: rgba(29, 78, 216, 0.8); }
     </style>
 </head>
-<body class="p-4 sm:p-8">
+<body class="multi-tone-gradient min-h-screen flex items-center justify-center p-4">
 
-    <div class="max-w-md mx-auto bg-slate-800 rounded-2xl shadow-xl p-6 space-y-6">
-        
-        <!-- Current Time -->
-        <div class="text-right text-xs text-slate-400">
-            <p id="current-time">--:--:--</p>
-        </div>
+<div class="main-card glass-card max-w-3xl w-full overflow-hidden font-sans">
+    <header class="bg-gradient-to-r from-indigo-600 to-blue-500 text-white p-4 text-center font-bold text-xl tracking-wide shadow-inner">
+        ⚡ Bilik Control
+    </header>
 
-        <!-- Status and Sensor Data -->
-        <div class="space-y-4">
-            <!-- Two-by-two grid for all four status cards -->
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-300">Uptime</p>
-                    <p id="uptime" class="text-lg font-bold text-slate-300 mt-1">--</p>
-                </div>
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-300">Temp / Humidity</p>
-                    <div class="flex justify-between items-end mt-1">
-                        <p id="temperature" class="text-2xl font-bold text-green-300">-- °C</p>
-                        <p id="humidity" class="text-2xl font-bold text-green-300">-- %</p>
-                    </div>
-                </div>
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-300">Fan Status</p>
-                    <p id="fan_status" class="text-2xl font-bold text-green-300 mt-1">--</p>
-                </div>
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-300">Control Mode</p>
-                    <p id="control_mode" class="text-lg font-bold text-yellow-300 mt-1">--</p>
+    <main class="p-6 flex flex-col gap-5">
+        <div class="status-section">
+            <div class="status-box text-center shadow-md p-4">
+                <div class="font-bold text-lg text-white">📊 Device Status</div>
+                <div class="text-sm mt-1 text-gray-200">
+                    <span id="current-time">Time: -</span> | <span id="uptime">Uptime: -</span>
                 </div>
             </div>
         </div>
 
-        <!-- Master Switch and Main LED -->
-        <div class="pt-4 border-t border-slate-700">
-            <h2 class="text-xl font-semibold text-slate-300 mb-4">Master Controls</h2>
-            <div class="grid grid-cols-2 gap-4">
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg flex flex-col items-center">
-                    <p class="text-sm text-slate-300 mb-2">Master Switch</p>
-                    <button id="toggle-master-switch-btn" class="w-full text-center py-2 px-4 rounded-full font-bold transition duration-300 ease-in-out text-white">Toggle</button>
-                </div>
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg flex flex-col items-center">
-                    <p class="text-sm text-slate-300 mb-2">Main LED</p>
-                    <button id="toggle-main-led-btn" class="w-full text-center py-2 px-4 rounded-full font-bold transition duration-300 ease-in-out text-white">Toggle</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Fan Controls -->
-        <div class="pt-4 border-t border-slate-700">
-            <h2 class="text-xl font-semibold text-slate-300 mb-4">Fan Control</h2>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <button onclick="sendControl('/on-perm')" class="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On</button>
-                <button onclick="sendControl('/off')" class="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">Off</button>
-                <button onclick="sendControl('/on-30m')" class="bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On (30m)</button>
-                <button onclick="sendControl('/on-1h')" class="bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white py-3 rounded-xl font-bold transition duration-300 ease-in-out">On (1h)</button>
-            </div>
-        </div>
-
-        <!-- Settings Section -->
-        <div class="pt-4 border-t border-slate-700">
-            <h2 class="text-xl font-semibold text-slate-300 mb-4">Settings</h2>
-            <div class="space-y-4">
-                <!-- Temperature and Humidity Settings -->
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <h3 class="font-medium text-slate-200">Thresholds</h3>
-                    <p class="text-sm text-slate-400 mt-1">Current Temp On: <span id="tempOnValue" class="text-green-300">--</span>°C | Off: <span id="tempOffValue" class="text-red-300">--</span>°C</p>
-                    
-                    <div class="flex items-center space-x-2 mt-2">
-                        <input type="number" id="tempOnInput" placeholder="Temp On" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
-                        <button onclick="setThreshold('/set-temp-on', 'tempOnInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
-                    </div>
-                    <div class="flex items-center space-x-2 mt-2">
-                        <input type="number" id="tempOffInput" placeholder="Temp Off" class="w-full bg-slate-800 text-white rounded-md px-3 py-2">
-                        <button onclick="setThreshold('/set-temp-off', 'tempOffInput')" class="bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 px-4 rounded-md font-bold">Set</button>
-                    </div>
-                </div>
-
-                <!-- Light Settings -->
-                <div class="bg-slate-700 p-4 rounded-xl shadow-lg">
-                    <h3 class="font-medium text-slate-200">Light and Brightness</h3>
-                    <p class="text-sm text-slate-400 mt-1">Night LED Brightness: <span id="night_led_brightness_level" class="text-slate-300">-- %</span></p>
-                    <p class="text-sm text-slate-400 mt-1">Main LED Brightness: <span id="main_led_brightness_level" class="text-slate-300">-- %</span></p>
-                    <div class="mt-4">
-                        <label for="nightLedSlider" class="block text-sm text-slate-300">Set Night LED Brightness</label>
-                        <input type="range" id="nightLedSlider" min="0" max="8191" value="4096" class="w-full mt-2">
-                        <button onclick="setBrightness('/set-brightness', 'nightLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set</button>
-                    </div>
-                    <div class="mt-4">
-                        <label for="mainLedSlider" class="block text-sm text-slate-300">Set Main LED Brightness</label>
-                        <input type="range" id="mainLedSlider" min="0" max="8191" value="8191" class="w-full mt-2">
-                        <button onclick="setBrightness('/set-main-led-brightness', 'mainLedSlider')" class="w-full bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white py-2 rounded-md font-bold mt-2">Set</button>
-                    </div>
+        <div id="device-controls" class="flex flex-col gap-5">
+            <div class="glass-card p-5 flex flex-col gap-4">
+                <div class="text-lg font-bold mb-1 text-white">🎛️ Main Controls</div>
+                <div class="flex gap-3">
+                    <button id="toggle-master-btn" class="toggle-btn flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out">
+                        Master SW
+                    </button>
+                    <button id="toggle-main-btn" class="toggle-btn flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out">
+                        Main LED
+                    </button>
                 </div>
             </div>
-        </div>
 
+            <div class="glass-card p-5 flex flex-col gap-4">
+                <div class="text-lg font-bold mb-1 text-white">🌬️ Fan Override (30 min)</div>
+                <div class="flex gap-3">
+                    <button id="fan-on-30m-btn" class="fan-button flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out btn-indigo">
+                        Fan ON
+                    </button>
+                    <button id="fan-off-btn" class="fan-button flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out btn-red">
+                        Fan OFF
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid gap-4 grid-cols-2">
+                <div id="nightled-status-box" class="status-box p-4 text-center text-sm font-semibold shadow-md transition-all duration-200 ease-in-out flex flex-col gap-2 border-2">
+                    <span class="text-2xl">💡</span>
+                    <div id="nightled-status"></div>
+                </div>
+                <div id="fan-status-box" class="status-box p-4 text-center text-sm font-semibold shadow-md transition-all duration-200 ease-in-out flex flex-col gap-2 border-2">
+                    <span class="text-2xl">🌀</span>
+                    <div id="fan-status"></div>
+                </div>
+            </div>
+
+            <div class="glass-card p-5 flex flex-col gap-4">
+                <div class="text-lg font-bold mb-1 text-white">⚙️ Preferences</div>
+                <div>
+                    <label class="text-white">Night LED Brightness (%)</label>
+                    <input type="range" id="nightled-pwm-slider" min="0" max="100" value="0" class="w-full h-2 bg-gray-200 rounded-full appearance-none cursor-pointer mt-2">
+                    <span id="nightled-pwm-value-display" class="text-white">0%</span>
+                </div>
+                <div><label class="text-white">Current Temp</label><div id="dht-status" class="font-medium text-white">-</div></div>
+                <div><label class="text-white">Temp ON (°C)</label><input type="number" id="temp-on" value="0.0" step="0.1" class="w-full p-2 border rounded-md glass-bg text-white"></div>
+                <div><label class="text-white">Temp OFF (°C)</label><input type="number" id="temp-off" value="0.0" step="0.1" class="w-full p-2 border rounded-md glass-bg text-white"></div>
+                <button id="set-preferences-btn" class="save-btn py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out btn-blue">
+                    💾 Save
+                </button>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="warning-modal" class="modal-overlay">
+    <div class="modal-content text-center flex flex-col gap-4">
+        <h3 class="text-2xl font-bold text-white">⚠️ Warning</h3>
+        <p id="warning-message" class="text-gray-200 text-lg"></p>
+        <button id="close-warning-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-full transition-colors hover:bg-red-600">OK</button>
     </div>
+</div>
 
-    <script>
-        const proxyBaseUrl = "/api.php";
+<script>
+    const API_BASE_URL = typeof Android !== 'undefined' && Android.getApiBaseUrl ? Android.getApiBaseUrl() : 'http://localhost/';
+   const API_PATH = API_BASE_URL; // API_PATH is the base URL itself
 
-        const uiElements = {
-            currentTime: document.getElementById("current-time"),
-            temperature: document.getElementById("temperature"),
-            humidity: document.getElementById("humidity"),
-            fan_status: document.getElementById("fan_status"),
-            control_mode: document.getElementById("control_mode"),
-            uptime: document.getElementById("uptime"),
-            night_led_brightness_level: document.getElementById("night_led_brightness_level"),
-            main_led_brightness_level: document.getElementById("main_led_brightness_level"),
-            toggleMasterSwitchBtn: document.getElementById("toggle-master-switch-btn"),
-            toggleMainLedBtn: document.getElementById("toggle-main-led-btn"),
-            tempOnValue: document.getElementById("tempOnValue"),
-            tempOffValue: document.getElementById("tempOffValue")
-        };
+   const statusEls = {
+     nightled: document.getElementById('nightled-status'),
+     dht: document.getElementById('dht-status'),
+     fan: document.getElementById('fan-status'),
+     currentTime: document.getElementById('current-time'),
+     uptime: document.getElementById('uptime')
+   };
 
-        async function fetchData() {
-            try {
-                const response = await fetch(`${proxyBaseUrl}?endpoint=/data`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                updateUI(data);
-            } catch (error) {
-                console.error("Could not fetch data:", error);
-                for (const key in uiElements) {
-                    if (uiElements[key] && key !== 'toggleMasterSwitchBtn' && key !== 'toggleMainLedBtn' && uiElements[key].tagName !== 'INPUT' && key !== 'currentTime') {
-                        uiElements[key].textContent = "Offline";
-                    }
-                }
-            }
-        }
+   const statusBoxes = {
+     nightled: document.getElementById('nightled-status-box'),
+     fan: document.getElementById('fan-status-box')
+   };
 
-        function updateUI(data) {
-            uiElements.temperature.textContent = `${data.temperature}°C`;
-            uiElements.humidity.textContent = `${data.humidity}%`;
-            uiElements.fan_status.textContent = data.gpio_status === "on" ? "ON" : "OFF";
-            uiElements.fan_status.classList.toggle('text-green-300', data.gpio_status === "on");
-            uiElements.fan_status.classList.toggle('text-red-300', data.gpio_status === "off");
-            uiElements.control_mode.textContent = data.control_mode;
-            
-            // Set current time from JSON data
-            if (data.current_time) {
-                const timePart = data.current_time.split(' ')[1];
-                uiElements.currentTime.textContent = timePart;
-            } else {
-                uiElements.currentTime.textContent = '--:--:--';
-            }
-            
-            // Calculate and format uptime with labels
-            const totalSeconds = data.uptime_seconds;
-            const days = Math.floor(totalSeconds / (3600 * 24));
-            const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            
-            const formattedUptime =
-                String(days).padStart(2, '0') + 'd ' +
-                String(hours).padStart(2, '0') + 'h ' +
-                String(minutes).padStart(2, '0') + 'm';
-            
-            uiElements.uptime.textContent = formattedUptime;
+   const controls = {
+     toggleMaster: document.getElementById('toggle-master-btn'),
+     toggleMain: document.getElementById('toggle-main-btn'),
+     fanOn30m: document.getElementById('fan-on-30m-btn'),
+     fanOff: document.getElementById('fan-off-btn'),
+     setPrefs: document.getElementById('set-preferences-btn')
+   };
 
-            uiElements.night_led_brightness_level.textContent = `${data.night_led_brightness_level.toFixed(1)} %`;
-            uiElements.main_led_brightness_level.textContent = `${data.main_led_brightness_level.toFixed(1)} %`;
+   const inputs = {
+     pwmSlider: document.getElementById('nightled-pwm-slider'),
+     pwmDisplay: document.getElementById('nightled-pwm-value-display'),
+     tempOn: document.getElementById('temp-on'),
+     tempOff: document.getElementById('temp-off')
+   };
 
-            uiElements.tempOnValue.textContent = data.temp_on_threshold;
-            uiElements.tempOffValue.textContent = data.temp_off_threshold;
+   const warningModal = document.getElementById('warning-modal');
+   const warningMessageEl = document.getElementById('warning-message');
+   const closeWarningBtn = document.getElementById('close-warning-btn');
 
-            const masterSwitchBtn = uiElements.toggleMasterSwitchBtn;
-            masterSwitchBtn.classList.remove('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
-            if (data.master_switch_state === "on") {
-                masterSwitchBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
-            } else {
-                masterSwitchBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
-            }
+   function showWarning(message) {
+       warningMessageEl.textContent = message;
+       warningModal.classList.add('open');
 
-            const mainLedBtn = uiElements.toggleMainLedBtn;
-            mainLedBtn.classList.remove('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700', 'bg-red-500', 'hover:bg-red-600', 'active:bg-red-700', 'bg-slate-500', 'hover:bg-slate-600', 'active:bg-slate-700');
-            if (data.master_switch_state === "off") {
-                mainLedBtn.classList.add('bg-slate-500', 'hover:bg-slate-600', 'active:bg-slate-700');
-            } else if (data.main_led_status === "on") {
-                mainLedBtn.classList.add('bg-green-500', 'hover:bg-green-600', 'active:bg-green-700');
-            } else {
-                mainLedBtn.classList.add('bg-red-500', 'hover:bg-red-600', 'active:bg-red-700');
-            }
-        }
-        
-        async function sendControl(endpoint) {
-            try {
-                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                fetchData();
-            } catch (error) {
-                console.error("Could not send command:", error);
-            }
-        }
+       // Check if the warning is a connection error to offer a reload option
+       if (message.includes('Failed to connect')) {
+           closeWarningBtn.onclick = () => {
+               location.reload();
+           };
+           closeWarningBtn.textContent = 'Refresh';
+       } else {
+           closeWarningBtn.onclick = hideWarning;
+           closeWarningBtn.textContent = 'OK';
+       }
+   }
 
-        async function setThreshold(endpoint, inputId) {
-            const value = document.getElementById(inputId).value;
-            if (!value) return;
-            try {
-                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}&value=${value}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                fetchData();
-            } catch (error) {
-                console.error("Could not set value:", error);
-            }
-        }
+   function hideWarning() {
+       warningModal.classList.remove('open');
+   }
 
-        async function setBrightness(endpoint, sliderId) {
-            const value = document.getElementById(sliderId).value;
-            try {
-                const response = await fetch(`${proxyBaseUrl}?endpoint=${endpoint}&value=${value}`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                fetchData();
-            } catch (error) {
-                console.error("Could not set brightness:", error);
-            }
-        }
+   closeWarningBtn.onclick = hideWarning;
 
-        uiElements.toggleMasterSwitchBtn.addEventListener('click', () => {
-            sendControl('/toggle-master-switch');
-        });
+   // Helper function to handle fetch requests with a timeout
+   function fetchWithTimeout(url, options, timeout = 5000) {
+       return Promise.race([
+           fetch(url, options),
+           new Promise((_, reject) =>
+               setTimeout(() => reject(new Error('Request timed out')), timeout)
+           )
+       ]);
+   }
 
-        uiElements.toggleMainLedBtn.addEventListener('click', () => {
-            sendControl('/toggle-main-led');
-        });
+   // Utility function to format uptime from seconds to days, hours, minutes
+   function formatUptime(s){
+     const d=Math.floor(s/86400);
+     const h=Math.floor((s%86400)/3600);
+     const m=Math.floor((s%3600)/60);
+     return `${d?d+"d ":""}${h?h+"h ":""}${m}m`;
+   }
 
-        fetchData();
-        setInterval(fetchData, 1000);
-    </script>
+   // Utility function to format the date part (DD/MM/YY)
+   function formatDate(t){
+     if(!t) return "-";
+     // Assuming 'YYYY-MM-DD HH:MM:SS' format
+     const parts = t.split(" ")[0].split("-");
+     if(parts.length !== 3) return t;
+     return `${parts[2]}/${parts[1]}/${parts[0].slice(2)}`;
+   }
+
+   // Utility function to format the time part (HH:MM)
+   function formatTimeNoSeconds(t){
+     if (!t) return "-";
+     const timePart = t.split(" ")[1];
+     if (!timePart) return "-";
+     const parts = timePart.split(":");
+     return parts.slice(0, 2).join(":");
+   }
+
+   // Main function to fetch the device state
+   async function fetchData(){
+     try{
+       const res=await fetchWithTimeout(`${API_PATH}state`);
+       if(!res.ok) {
+           const errorText = await res.text();
+           throw new Error(errorText || "Network response was not ok.");
+       }
+       const data=await res.json();
+       updateUI(data);
+     }catch(error){
+       console.error("Fetch error:", error);
+       showWarning(`❌ Failed to connect to the device. Error: ${error.message}`);
+     }
+   }
+
+   // Function to update the UI based on the fetched data
+   function updateUI(d){
+     // Update system status
+     statusEls.currentTime.textContent=`Time: ${formatDate(d.currentTime)} ${formatTimeNoSeconds(d.currentTime)}`;
+     statusEls.uptime.textContent=`Uptime: ${formatUptime(d.uptimeSeconds)}`;
+
+     // Update Master Switch button appearance
+     const masterBtnClasses = 'toggle-btn flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out ' + (d.masterswState ? 'btn-green' : 'btn-red');
+     controls.toggleMaster.className = masterBtnClasses;
+
+     // Update Main LED button appearance
+     const mainBtnClasses = 'toggle-btn flex-1 py-3 px-4 rounded-full text-white font-semibold transition-all duration-200 ease-in-out ' + (d.mainledswState ? 'btn-green' : 'btn-red');
+     controls.toggleMain.className = mainBtnClasses;
+
+     // Update Night LED status box
+     statusEls.nightled.textContent=`Night LED: ${d.nightledState?'ON':'OFF'}`;
+     statusBoxes.nightled.className=`status-box p-4 rounded-xl text-center text-sm font-semibold shadow-md transition-all duration-200 ease-in-out flex flex-col gap-2 ${d.nightledState?'text-white border-green-500 border-2':'text-white border-red-500 border-2'}`;
+
+     // Update Night LED PWM slider and display
+     inputs.pwmSlider.value=Math.round((d.nightledPWMValue/255)*100);
+     inputs.pwmDisplay.textContent=`${inputs.pwmSlider.value}%`;
+
+     // Update Temperature status
+     statusEls.dht.textContent=`${d.temperature.toFixed(1)}°C`;
+
+     // Update Fan status box
+     statusEls.fan.textContent=`Fan: ${d.fanState?'ON':'OFF'}`;
+     statusBoxes.fan.className=`status-box p-4 rounded-xl text-center text-sm font-semibold shadow-md transition-all duration-200 ease-in-out flex flex-col gap-2 ${d.fanState?'text-white border-green-500 border-2':'text-white border-red-500 border-2'}`;
+
+     // Update Temperature preferences input fields
+     inputs.tempOn.value=d.tempThresholdOn;
+     inputs.tempOff.value=d.tempThresholdOff;
+   }
+
+   // Function to send commands to the ESP32 device
+   async function sendCommand(endpoint, val){
+     let url=`${API_PATH}${endpoint}`;
+     if(endpoint==='set_nightled_pwm'&&val!==undefined) url+=`?pwmValue=${val}`;
+     if(endpoint==='set_temp_on'&&val!==undefined) url+=`?tempOn=${val}`;
+     if(endpoint==='set_temp_off'&&val!==undefined) url+=`?tempOff=${val}`;
+     try {
+       const res = await fetchWithTimeout(url);
+       if(!res.ok) {
+           const errorText = await res.text();
+           throw new Error(errorText || "Command failed.");
+       }
+       await fetchData(); // Refresh state after command is successful
+     } catch (error) {
+       console.error("Command send error:", error);
+       showWarning(`${error.message}`);
+     }
+   }
+
+   // --- Event Listeners for Controls ---
+   controls.toggleMaster.onclick=()=>sendCommand('masterswState', null);
+   controls.toggleMain.onclick=()=>sendCommand('mainledswState', null);
+   controls.fanOn30m.onclick=()=>sendCommand('on-30m', null);
+   controls.fanOff.onclick=()=>sendCommand('off', null);
+
+   controls.setPrefs.onclick=async()=>{
+     const tempOnValue = parseFloat(inputs.tempOn.value);
+     const tempOffValue = parseFloat(inputs.tempOff.value);
+
+     if (isNaN(tempOnValue) || isNaN(tempOffValue)) {
+       showWarning('Please enter valid temperature values.');
+       return;
+     }
+
+     try {
+       // Send temperature settings sequentially
+       await sendCommand('set_temp_on', tempOnValue);
+       await sendCommand('set_temp_off', tempOffValue);
+       // fetchData() is called inside sendCommand, so status will refresh
+     } catch (error) {
+       console.error("Error setting preferences:", error);
+       showWarning(`${error.message}`);
+     }
+   };
+
+   // Update display when slider is moved
+   inputs.pwmSlider.oninput=()=>{
+       inputs.pwmDisplay.textContent=`${inputs.pwmSlider.value}%`;
+   };
+
+   // Send command only when the slider stops changing (user lifts finger/mouse)
+   inputs.pwmSlider.onchange=()=>{
+       const pwm = Math.round((inputs.pwmSlider.value / 100) * 255);
+       sendCommand('set_nightled_pwm', pwm);
+   };
+
+   // --- Android Interface Functions ---
+   // Function exposed to Android to set Dark Mode state
+   function setDarkMode(isDarkMode) {
+     document.body.classList.toggle('dark-mode', isDarkMode);
+     updateStatusBarColor(isDarkMode);
+   }
+
+   // Function exposed to Android to trigger a data refresh
+   function triggerRefresh() {
+     fetchData();
+   }
+
+   // Function to communicate the status bar color back to the Android app
+   function updateStatusBarColor(isDarkMode) {
+     if (typeof Android !== 'undefined' && Android.setStatusBarColor) {
+       // Set a color corresponding to the header/background
+       const color = isDarkMode ? '#1a202c' : '#4F46E5'; // Indigo-700 / Dark background
+       Android.setStatusBarColor(color);
+     }
+   }
+
+   // Initial setup on page load
+   document.addEventListener('DOMContentLoaded', () => {
+       // Assume light mode initially and set status bar color
+       updateStatusBarColor(false);
+       // Fetch initial data
+       fetchData();
+   });
+</script>
 </body>
 </html>
