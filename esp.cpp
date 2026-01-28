@@ -10,6 +10,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <HTTPClient.h>
+#include <Update.h>
 
 #define MAINLED_PIN 1
 #define NIGHTLED_PIN 7
@@ -38,9 +39,8 @@ const char* ssid = "wifi_slow2";
 IPAddress staticIP(192, 168, 1, 4);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
-IPAddress dns(192, 168, 1, 1);
 
-const char* ntpServer = "time.google.com";
+const char* ntpServer = "192.168.1.1";
 const long gmtOffset_sec = 8 * 3600;
 const int daylightOffset_sec = 0;
 
@@ -66,7 +66,6 @@ unsigned long lastFanStateChange = 0;
 const unsigned long fanCooldownDelay = 5000;
 bool fanIsOnAutomatic = true;
 
-bool serverStarted = false;
 bool isEveningToggleDone = false;
 bool isMorningToggleDone = false;
 bool isNtpSynced = false;
@@ -94,13 +93,80 @@ static bool scheduledFanActive = false;
 const unsigned long fanScheduleInterval = 15 * 60 * 1000;
 const unsigned long fanScheduleDuration = 1 * 60 * 1000;
 
+const char* index_html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32C3 Control</title>
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); }
+        .btn { padding: 12px 24px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; color: white; margin: 5px; }
+        .btn-blue { background: #007bff; }
+        .btn-red { background: #dc3545; }
+        .btn-green { background: #28a745; }
+        input[type=number], input[type=range] { padding: 8px; border-radius: 5px; border: 1px solid #444; background: #333; color: white; width: 80px; }
+        #update-form { margin-top: 20px; border-top: 1px solid #444; padding-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>Environment</h2>
+        <p>Temp: <span id="temp">--</span>°C</p>
+        <p>Fan: <span id="fan">--</span> | Main LED: <span id="led">--</span></p>
+    </div>
+    <div class="card">
+        <h2>Controls</h2>
+        <button class="btn btn-blue" onclick="api('/mainledswState')">Toggle Main LED</button>
+        <button class="btn btn-blue" onclick="api('/masterswState')">Toggle Master SW</button>
+        <br>
+        <button class="btn btn-green" onclick="api('/on-30m')">Fan 30M On</button>
+        <button class="btn btn-red" onclick="api('/off')">Fan Auto/Off</button>
+    </div>
+    <div class="card">
+        <h2>Settings</h2>
+        <p>On Threshold: <input type="number" step="0.1" id="tOn" onchange="setVal('/set_temp_on?tempOn=', this.value)"> °C</p>
+        <p>Off Threshold: <input type="number" step="0.1" id="tOff" onchange="setVal('/set_temp_off?tempOff=', this.value)"> °C</p>
+        <p>Night LED PWM: <input type="range" min="0" max="255" id="nPwm" oninput="setVal('/set_nightled_pwm?pwmValue=', this.value)"> <span id="pwmVal"></span></p>
+    </div>
+    <div class="card" id="update-form">
+        <h2>Firmware Update</h2>
+        <form method='POST' action='/update' enctype='multipart/form-data'>
+            <input type='file' name='update'>
+            <input type='submit' value='Update' class="btn btn-red">
+        </form>
+    </div>
+    <script>
+        function api(path) { fetch(path).then(r => r.text()).then(t => console.log(t)); }
+        function setVal(path, val) { fetch(path + val); if(path.includes('pwm')) document.getElementById('pwmVal').innerText = val; }
+        function updateState() {
+            fetch('/state').then(r => r.json()).then(s => {
+                document.getElementById('temp').innerText = s.temperature.toFixed(1);
+                document.getElementById('fan').innerText = s.fanState ? "ON" : "OFF";
+                document.getElementById('led').innerText = s.mainledState ? "ON" : "OFF";
+                document.getElementById('tOn').value = s.tempThresholdOn;
+                document.getElementById('tOff').value = s.tempThresholdOff;
+                document.getElementById('nPwm').value = s.nightledPWMValue;
+                document.getElementById('pwmVal').innerText = s.nightledPWMValue;
+            });
+        }
+        setInterval(updateState, 2000);
+        updateState();
+    </script>
+</body>
+</html>
+)rawliteral";
+
 void onWiFiEvent(WiFiEvent_t event) {
     switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            server.begin();
+            isNtpSynced = false;
+            break;
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             isNtpSynced = false;
             WiFi.begin(ssid);
-            break;
-        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             break;
         default:
             break;
@@ -120,9 +186,7 @@ void handleOptions() {
 
 bool isTimeInRange(int startHour, int startMin, int endHour, int endMin) {
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
-        return false;
-    }
+    if (!getLocalTime(&timeinfo)) return false;
     int nowInMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
     int startInMinutes = startHour * 60 + startMin;
     int endInMinutes = endHour * 60 + endMin;
@@ -134,33 +198,26 @@ bool isTimeInRange(int startHour, int startMin, int endHour, int endMin) {
 }
 
 void handleMainToggle() {
-    if (masterswState == 1) {
-        mainledswState = 1 - mainledswState;
-    }
-    String response = "Main LED Switch state is now: " + String(mainledswState);
+    if (masterswState == 1) mainledswState = 1 - mainledswState;
     addCorsHeaders();
-    server.send(200, "text/plain", response);
+    server.send(200, "text/plain", String(mainledswState));
 }
 
 void handleMasterToggle() {
-    int oldMasterswState = masterswState;
     masterswState = 1 - masterswState;
-    if (oldMasterswState != masterswState) {
-        masterSwOledDisplayStartTime = millis();
-        if (!isOledActive) {
-            isOledActive = true;
-            display.ssd1306_command(SSD1306_DISPLAYON);
-        }
+    masterSwOledDisplayStartTime = millis();
+    if (!isOledActive) {
+        isOledActive = true;
+        display.ssd1306_command(SSD1306_DISPLAYON);
     }
-    String response = "Master Switch state is now: " + String(masterswState);
     addCorsHeaders();
-    server.send(200, "text/plain", response);
+    server.send(200, "text/plain", String(masterswState));
 }
 
 void handleSetTempOn() {
     if (!server.hasArg("tempOn")) {
         addCorsHeaders();
-        server.send(400, "text/plain", "Missing 'tempOn' parameter.");
+        server.send(400, "text/plain", "Error");
         return;
     }
     float newTempOn = server.arg("tempOn").toFloat();
@@ -170,17 +227,17 @@ void handleSetTempOn() {
         preferences.putFloat("tempOn", tempThresholdOn);
         preferences.end();
         addCorsHeaders();
-        server.send(200, "text/plain", "Fan 'tempOn' threshold set successfully.");
+        server.send(200, "text/plain", "OK");
     } else {
         addCorsHeaders();
-        server.send(400, "text/plain", "New 'tempOn' must be greater than current 'tempOff'.");
+        server.send(400, "text/plain", "Low");
     }
 }
 
 void handleSetTempOff() {
     if (!server.hasArg("tempOff")) {
         addCorsHeaders();
-        server.send(400, "text/plain", "Missing 'tempOff' parameter.");
+        server.send(400, "text/plain", "Error");
         return;
     }
     float newTempOff = server.arg("tempOff").toFloat();
@@ -190,10 +247,10 @@ void handleSetTempOff() {
         preferences.putFloat("tempOff", tempThresholdOff);
         preferences.end();
         addCorsHeaders();
-        server.send(200, "text/plain", "Fan 'tempOff' threshold set successfully.");
+        server.send(200, "text/plain", "OK");
     } else {
         addCorsHeaders();
-        server.send(400, "text/plain", "New 'tempOff' must be less than current 'tempOn'.");
+        server.send(400, "text/plain", "High");
     }
 }
 
@@ -209,45 +266,36 @@ void handleFanOn30m() {
         }
         oledOnTime = millis();
         isTempStatusDisplay = false;
-        masterSwOledDisplayStartTime = 0;
         addCorsHeaders();
-        server.send(200, "text/plain", "Fan turned on for 30 minutes. Automatic mode is suspended.");
+        server.send(200, "text/plain", "OK");
     } else {
         oledErrorDisplayStartTime = millis();
         if (!isOledActive) {
             isOledActive = true;
             display.ssd1306_command(SSD1306_DISPLAYON);
         }
-        oledOnTime = millis();
         addCorsHeaders();
-        server.send(400, "text/plain", "Cannot turn fan on.");
+        server.send(400, "text/plain", "Fail");
     }
 }
 
 void handleFanOff() {
     if (fanIsOnAutomatic && digitalRead(FAN_PIN) == HIGH) {
         addCorsHeaders();
-        server.send(400, "text/plain", "Cannot turn fan off: Fan is running in automatic mode.");
+        server.send(400, "text/plain", "Locked");
     } else {
         digitalWrite(FAN_PIN, LOW);
         fanOverride = false;
         fanIsOnAutomatic = true;
-        if (isOledActive && masterSwOledDisplayStartTime == 0) {
-            display.clearDisplay();
-            display.display();
-            display.ssd1306_command(SSD1306_DISPLAYOFF);
-            isOledActive = false;
-            isTempStatusDisplay = false;
-        }
         addCorsHeaders();
-        server.send(200, "text/plain", "Fan turned off. Automatic mode is restored.");
+        server.send(200, "text/plain", "OK");
     }
 }
 
 void handleSetNightledPWM() {
     if (!server.hasArg("pwmValue")) {
         addCorsHeaders();
-        server.send(400, "text/plain", "Missing 'pwmValue' parameter.");
+        server.send(400, "text/plain", "Error");
         return;
     }
     int newPWM = server.arg("pwmValue").toInt();
@@ -257,10 +305,7 @@ void handleSetNightledPWM() {
         preferences.putInt("nightledPWM", nightledPWMValue);
         preferences.end();
         addCorsHeaders();
-        server.send(200, "text/plain", "Night LED PWM value set successfully.");
-    } else {
-        addCorsHeaders();
-        server.send(400, "text/plain", "PWM value must be between 0 and 255.");
+        server.send(200, "text/plain", "OK");
     }
 }
 
@@ -268,48 +313,21 @@ bool shouldNightLedBeOn() {
     return isTimeInRange(19, 15, 7, 15) && (mainledswState == 0 || masterswState == 0);
 }
 
-void handleITemp() {
-    sensors.requestTemperatures();
-    float temp = sensors.getTempC(tempSensorAddress);
-    addCorsHeaders();
-    if (temp != DEVICE_DISCONNECTED_C) {
-        currentTemperature = temp;
-        consecutiveFailedReads = 0;
-        sensorIsFaulty = false;
-        server.send(200, "text/plain", String(currentTemperature));
-    } else {
-        consecutiveFailedReads++;
-        if (consecutiveFailedReads >= maxFailedReads) {
-            sensorIsFaulty = true;
-        }
-        if (sensorIsFaulty) {
-            server.send(404, "text/plain", "Sensor is faulty.");
-        } else {
-            server.send(404, "text/plain", "Sensor is temporarily unavailable.");
-        }
-    }
-}
-
 void handleState() {
-    StaticJsonDocument<300> doc;
+    StaticJsonDocument<350> doc;
     struct tm timeinfo;
-    char timeString[64];
+    char timeString[32];
     getLocalTime(&timeinfo);
-    strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    strftime(timeString, sizeof(timeString), "%H:%M:%S", &timeinfo);
     doc["currentTime"] = timeString;
-    long uptimeSeconds = millis() / 1000;
-    doc["uptimeSeconds"] = uptimeSeconds;
     doc["mainledswState"] = mainledswState;
     doc["masterswState"] = masterswState;
     doc["mainledState"] = digitalRead(MAINLED_PIN);
-    doc["nightledState"] = shouldNightLedBeOn();
     doc["nightledPWMValue"] = nightledPWMValue;
     doc["temperature"] = currentTemperature;
     doc["fanState"] = digitalRead(FAN_PIN);
     doc["tempThresholdOn"] = tempThresholdOn;
     doc["tempThresholdOff"] = tempThresholdOff;
-    doc["fanOverride"] = fanOverride;
-    doc["sensorIsFaulty"] = sensorIsFaulty;
     doc["fanIsOnAutomatic"] = fanIsOnAutomatic;
     String jsonResponse;
     serializeJson(doc, jsonResponse);
@@ -318,62 +336,43 @@ void handleState() {
 }
 
 void controlNightLED() {
-    if (shouldNightLedBeOn()) {
-        ledcWrite(NIGHTLED_PIN, nightledPWMValue);
-    } else {
-        ledcWrite(NIGHTLED_PIN, 0);
-    }
+    if (shouldNightLedBeOn()) ledcWrite(NIGHTLED_PIN, nightledPWMValue);
+    else ledcWrite(NIGHTLED_PIN, 0);
 }
 
 void updateDisplay() {
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
-
     if (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration) {
         display.setTextSize(2);
         display.setCursor(0, 0);
         display.print("Can't turn");
         display.setCursor(0, 16);
         display.print("on fan 30m");
-    }
-    else if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
+    } else if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
         String masterStateStr = masterswState == 1 ? "SW ON" : "SW OFF";
         display.setTextSize(3);
-        int16_t x1, y1;
-        uint16_t w, h;
+        int16_t x1, y1; uint16_t w, h;
         display.getTextBounds(masterStateStr, 0, 0, &x1, &y1, &w, &h);
         display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
         display.print(masterStateStr);
-    }
-    else if (fanOverride && !isTempStatusDisplay) {
+    } else if (fanOverride && !isTempStatusDisplay) {
         unsigned long elapsed = millis() - fanOverrideStartTime;
         unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
-        long remainingSeconds = remainingTimeMs / 1000;
-        int minutes = remainingSeconds / 60;
-        int seconds = remainingSeconds % 60;
+        long remSec = remainingTimeMs / 1000;
         display.setCursor(0, 0);
         display.setTextSize(1);
-        String masterStateStr = masterswState == 1 ? "(MS ON)" : "(MS OFF)";
         display.print("FAN OVERRIDE ");
-        display.println(masterStateStr);
+        display.println(masterswState == 1 ? "MS ON" : "MS OFF");
         display.setCursor(0, 16);
         display.setTextSize(2);
-        if (minutes < 10) display.print("0");
-        display.print(minutes);
-        display.print(":");
-        if (seconds < 10) display.print("0");
-        display.print(seconds);
-    }
-    else {
+        display.printf("%02ld:%02ld", remSec / 60, remSec % 60);
+    } else {
         display.setCursor(0, 0);
         display.setTextSize(1);
         display.print("WiFi: [");
-        long rssi = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : -100;
-        int bars = map(rssi, -100, -30, 0, 13);
-        for (int i = 0; i < 13; i++) {
-            if (i < bars) display.print("=");
-            else display.print(" ");
-        }
+        int bars = map(constrain(WiFi.RSSI(), -100, -30), -100, -30, 0, 13);
+        for (int i = 0; i < 13; i++) display.print(i < bars ? "=" : " ");
         display.println("]");
         display.setCursor(0, 16);
         display.setTextSize(1);
@@ -387,20 +386,18 @@ void updateDisplay() {
 }
 
 void setup() {
-    setCpuFrequencyMhz(80);
     Wire.begin(OLED_SDA, OLED_SCL);
-    if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-        for(;;);
+    if(display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+        display.println("Booting...");
+        display.display();
     }
-    display.clearDisplay();
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0);
-    display.println("System Booting...");
-    display.display();
 
     WiFi.onEvent(onWiFiEvent);
-    WiFi.config(staticIP, gateway, subnet, dns);
+    WiFi.config(staticIP, gateway, subnet);
     WiFi.begin(ssid);
 
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
@@ -421,12 +418,13 @@ void setup() {
     pinMode(OVERRIDE_SW_PIN, INPUT_PULLUP);
 
     sensors.begin();
-    sensors.setResolution(tempSensorAddress, 12);
+    sensors.setResolution(12);
     tempSensorAddress[0] = 0x28; tempSensorAddress[1] = 0x07; tempSensorAddress[2] = 0xBB; tempSensorAddress[3] = 0x83;
     tempSensorAddress[4] = 0x00; tempSensorAddress[5] = 0x00; tempSensorAddress[6] = 0x00; tempSensorAddress[7] = 0xF5;
 
     ledcAttach(NIGHTLED_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
 
+    server.on("/", []() { server.send(200, "text/html", index_html); });
     server.on("/mainledswState", handleMainToggle);
     server.on("/masterswState", handleMasterToggle);
     server.on("/set_temp_on", handleSetTempOn);
@@ -435,223 +433,111 @@ void setup() {
     server.on("/off", handleFanOff);
     server.on("/set_nightled_pwm", handleSetNightledPWM);
     server.on("/state", handleState);
-    server.on("/i_temp", handleITemp);
 
-    server.on("/mainledswState", HTTP_OPTIONS, handleOptions);
-    server.on("/masterswState", HTTP_OPTIONS, handleOptions);
-    server.on("/set_temp_on", HTTP_OPTIONS, handleOptions);
-    server.on("/set_temp_off", HTTP_OPTIONS, handleOptions);
-    server.on("/on-30m", HTTP_OPTIONS, handleOptions);
-    server.on("/off", HTTP_OPTIONS, handleOptions);
-    server.on("/set_nightled_pwm", HTTP_OPTIONS, handleOptions);
-    server.on("/state", HTTP_OPTIONS, handleOptions);
-    server.on("/i_temp", HTTP_OPTIONS, handleOptions);
+    server.on("/update", HTTP_POST, []() {
+        server.sendHeader("Connection", "close");
+        server.send(200, "text/plain", (Update.hasError()) ? "FAIL" : "OK");
+        ESP.restart();
+    }, []() {
+        HTTPUpload& upload = server.upload();
+        if (upload.status == UPLOAD_FILE_START) {
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
+        } else if (upload.status == UPLOAD_FILE_WRITE) {
+            if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) Update.printError(Serial);
+        } else if (upload.status == UPLOAD_FILE_END) {
+            if (!Update.end(true)) Update.printError(Serial);
+        }
+    });
 
     delay(1000);
     display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 void loop() {
-    static unsigned long lastWifiAttempt = 0;
-    if (WiFi.status() != WL_CONNECTED) {
-        serverStarted = false;
-        if (millis() - lastWifiAttempt >= 20) {
-            WiFi.begin(ssid);
-            lastWifiAttempt = millis();
-        }
-    } else {
-        if (!serverStarted) {
-            server.begin();
-            serverStarted = true;
-        }
+    if (WiFi.status() == WL_CONNECTED) {
         server.handleClient();
-
         if (!isNtpSynced) {
             struct tm timeinfo;
-            if (getLocalTime(&timeinfo)) {
-                isNtpSynced = true;
-            }
+            if (getLocalTime(&timeinfo)) isNtpSynced = true;
         }
     }
-
-    bool isMasterSwDisplayActive = (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration);
-    bool isOverrideDisplayActive = fanOverride;
-    bool isErrorDisplayActive = (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration);
 
     if (digitalRead(TOUCH_SENSOR_PIN) == HIGH) {
-        if (!isOledActive) {
-            isOledActive = true;
-            display.ssd1306_command(SSD1306_DISPLAYON);
-        }
+        if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
         oledOnTime = millis();
-        masterSwOledDisplayStartTime = 0;
-        oledErrorDisplayStartTime = 0;
-        if (fanOverride) isTempStatusDisplay = !isTempStatusDisplay;
-        else isTempStatusDisplay = true;
+        isTempStatusDisplay = fanOverride ? !isTempStatusDisplay : true;
     }
 
-    if (isMasterSwDisplayActive) {
-        if (!isOledActive) {
-            isOledActive = true;
-            display.ssd1306_command(SSD1306_DISPLAYON);
-        }
-        if (fanOverride) isTempStatusDisplay = false;
-        oledErrorDisplayStartTime = 0;
-    } else if (masterSwOledDisplayStartTime != 0) {
-        masterSwOledDisplayStartTime = 0;
+    if (isOledActive && (millis() - oledOnTime >= oledActiveDuration) && masterSwOledDisplayStartTime == 0 && !fanOverride && oledErrorDisplayStartTime == 0) {
+        display.clearDisplay(); display.display(); display.ssd1306_command(SSD1306_DISPLAYOFF);
+        isOledActive = false; isTempStatusDisplay = false;
     }
 
-    if (isOledActive && !isMasterSwDisplayActive && !isOverrideDisplayActive && !isErrorDisplayActive) {
-        if (millis() - oledOnTime >= oledActiveDuration) {
-            display.clearDisplay();
-            display.display();
-            display.ssd1306_command(SSD1306_DISPLAYOFF);
-            isOledActive = false;
-            isTempStatusDisplay = false;
-        }
-    }
+    static unsigned long lastDisp = 0;
+    if (isOledActive && (millis() - lastDisp >= 1000)) { updateDisplay(); lastDisp = millis(); }
 
-    if (oledErrorDisplayStartTime != 0 && !isErrorDisplayActive) oledErrorDisplayStartTime = 0;
-
-    if (fanOverride && isTempStatusDisplay && (millis() - oledOnTime >= oledActiveDuration)) isTempStatusDisplay = false;
-
-    static unsigned long lastDisplayUpdate = 0;
-    if ((isOledActive || isMasterSwDisplayActive || isErrorDisplayActive) && (millis() - lastDisplayUpdate >= 1000)) {
-        updateDisplay();
-        lastDisplayUpdate = millis();
-    }
-
-    if (millis() - lastSensorReadTime >= sensorReadInterval && masterswState == 1 && fanIsOnAutomatic) {
+    if (millis() - lastSensorReadTime >= sensorReadInterval) {
         sensors.requestTemperatures();
         float temp = sensors.getTempC(tempSensorAddress);
-        if (temp != DEVICE_DISCONNECTED_C) {
-            currentTemperature = temp;
-            consecutiveFailedReads = 0;
-            sensorIsFaulty = false;
-        } else {
-            consecutiveFailedReads++;
-            if (consecutiveFailedReads >= maxFailedReads) sensorIsFaulty = true;
-        }
+        if (temp != DEVICE_DISCONNECTED_C) { currentTemperature = temp; sensorIsFaulty = false; consecutiveFailedReads = 0; }
+        else if (++consecutiveFailedReads >= maxFailedReads) sensorIsFaulty = true;
         lastSensorReadTime = millis();
     }
 
     if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
-        fanOverride = false;
-        fanIsOnAutomatic = true;
-        lastScheduledFanToggle = millis();
-        scheduledFanActive = false;
-        if (isOledActive && masterSwOledDisplayStartTime == 0) {
-            display.clearDisplay();
-            display.display();
-            display.ssd1306_command(SSD1306_DISPLAYOFF);
-            isOledActive = false;
-            isTempStatusDisplay = false;
-        }
+        fanOverride = false; fanIsOnAutomatic = true;
     }
 
     if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
         if (scheduledFanActive) {
-            if (millis() - lastScheduledFanToggle >= fanScheduleDuration) {
-                digitalWrite(FAN_PIN, LOW);
-                scheduledFanActive = false;
-            }
-        } else {
-            if (digitalRead(FAN_PIN) == LOW && millis() - lastScheduledFanToggle >= fanScheduleInterval) {
-                digitalWrite(FAN_PIN, HIGH);
-                lastScheduledFanToggle = millis();
-                scheduledFanActive = true;
-            }
+            if (millis() - lastScheduledFanToggle >= fanScheduleDuration) { digitalWrite(FAN_PIN, LOW); scheduledFanActive = false; }
+        } else if (digitalRead(FAN_PIN) == LOW && millis() - lastScheduledFanToggle >= fanScheduleInterval) {
+            digitalWrite(FAN_PIN, HIGH); lastScheduledFanToggle = millis(); scheduledFanActive = true;
         }
-    } else {
-        scheduledFanActive = false;
     }
 
-    if (fanOverride) {
-        digitalWrite(FAN_PIN, HIGH);
-    } else if (!scheduledFanActive && fanIsOnAutomatic && !sensorIsFaulty) {
-        if (masterswState == 1) {
-            if (millis() - lastFanStateChange >= fanCooldownDelay) {
-                if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) {
-                    digitalWrite(FAN_PIN, HIGH);
-                    lastFanStateChange = millis();
-                }
-                else if (digitalRead(FAN_PIN) == HIGH && currentTemperature <= tempThresholdOff) {
-                    digitalWrite(FAN_PIN, LOW);
-                    lastFanStateChange = millis();
-                }
-            }
-        } else {
-            digitalWrite(FAN_PIN, LOW);
+    if (!scheduledFanActive && !fanOverride && fanIsOnAutomatic && !sensorIsFaulty && masterswState == 1) {
+        if (millis() - lastFanStateChange >= fanCooldownDelay) {
+            if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) { digitalWrite(FAN_PIN, HIGH); lastFanStateChange = millis(); }
+            else if (digitalRead(FAN_PIN) == HIGH && currentTemperature <= tempThresholdOff) { digitalWrite(FAN_PIN, LOW); lastFanStateChange = millis(); }
         }
-    } else if (!scheduledFanActive) {
+    } else if (!scheduledFanActive && !fanOverride && (masterswState == 0 || !fanIsOnAutomatic)) {
         digitalWrite(FAN_PIN, LOW);
+    } else if (fanOverride) {
+        digitalWrite(FAN_PIN, HIGH);
     }
 
-    static int lastRawMain = HIGH, lastStableMain = HIGH;
-    int curRawMain = digitalRead(MAINLEDSW_PIN);
-    if (curRawMain != lastRawMain) { mainledswLastDebounceTime = millis(); lastRawMain = curRawMain; }
-    if ((millis() - mainledswLastDebounceTime) > DEBOUNCE_DELAY) {
-        if (curRawMain == LOW && lastStableMain == HIGH) {
-            if (masterswState == 1) mainledswState = 1 - mainledswState;
-            lastStableMain = LOW;
-        } else if (curRawMain == HIGH) lastStableMain = HIGH;
-    }
+    static int lastS1 = HIGH; int r1 = digitalRead(MAINLEDSW_PIN);
+    if (r1 != lastS1) { mainledswLastDebounceTime = millis(); lastS1 = r1; }
+    if ((millis() - mainledswLastDebounceTime) > DEBOUNCE_DELAY && r1 == LOW && lastMainledswReading == HIGH) {
+        if (masterswState == 1) mainledswState = 1 - mainledswState; lastMainledswReading = LOW;
+    } else if (r1 == HIGH) lastMainledswReading = HIGH;
 
-    static int lastRawMast = HIGH, lastStableMast = HIGH;
-    int curRawMast = digitalRead(MASTERSW_PIN);
-    if (curRawMast != lastRawMast) { masterswLastDebounceTime = millis(); lastRawMast = curRawMast; }
-    if ((millis() - masterswLastDebounceTime) > DEBOUNCE_DELAY) {
-        if (curRawMast == LOW && lastStableMast == HIGH) {
-            masterswState = 1 - masterswState;
-            masterSwOledDisplayStartTime = millis();
-            if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-            lastStableMast = LOW;
-        } else if (curRawMast == HIGH) lastStableMast = HIGH;
-    }
+    static int lastS2 = HIGH; int r2 = digitalRead(MASTERSW_PIN);
+    if (r2 != lastS2) { masterswLastDebounceTime = millis(); lastS2 = r2; }
+    if ((millis() - masterswLastDebounceTime) > DEBOUNCE_DELAY && r2 == LOW && lastMasterswReading == HIGH) {
+        masterswState = 1 - masterswState; masterSwOledDisplayStartTime = millis();
+        if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
+        lastMasterswReading = LOW;
+    } else if (r2 == HIGH) lastMasterswReading = HIGH;
 
-    static int lastRawOver = HIGH, lastStableOver = HIGH;
-    int curRawOver = digitalRead(OVERRIDE_SW_PIN);
-    if (curRawOver != lastRawOver) { overrideSwLastDebounceTime = millis(); lastRawOver = curRawOver; }
-    if ((millis() - overrideSwLastDebounceTime) > DEBOUNCE_DELAY) {
-        if (curRawOver == LOW && lastStableOver == HIGH) {
-            if (fanOverride) {
-                digitalWrite(FAN_PIN, LOW);
-                fanOverride = false;
-                fanIsOnAutomatic = true;
-                if (isOledActive && masterSwOledDisplayStartTime == 0) {
-                    display.clearDisplay(); display.display(); display.ssd1306_command(SSD1306_DISPLAYOFF);
-                    isOledActive = false; isTempStatusDisplay = false;
-                }
-            } else {
-                if (masterswState == 1 && fanIsOnAutomatic == true && digitalRead(FAN_PIN) == LOW) {
-                    fanOverride = true; fanOverrideStartTime = millis(); fanIsOnAutomatic = false;
-                    digitalWrite(FAN_PIN, HIGH);
-                    if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-                    oledOnTime = millis(); isTempStatusDisplay = false; masterSwOledDisplayStartTime = 0;
-                } else {
-                    oledErrorDisplayStartTime = millis();
-                    if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-                    oledOnTime = millis();
-                }
-            }
-            lastStableOver = LOW;
-        } else if (curRawOver == HIGH) lastStableOver = HIGH;
-    }
+    static int lastS3 = HIGH; int r3 = digitalRead(OVERRIDE_SW_PIN);
+    if (r3 != lastS3) { overrideSwLastDebounceTime = millis(); lastS3 = r3; }
+    if ((millis() - overrideSwLastDebounceTime) > DEBOUNCE_DELAY && r3 == LOW && lastStableOver == HIGH) {
+        if (fanOverride) { fanOverride = false; fanIsOnAutomatic = true; }
+        else handleFanOn30m();
+        lastStableOver = LOW;
+    } else if (r3 == HIGH) lastStableOver = HIGH;
 
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-        if (timeinfo.tm_hour == 19 && timeinfo.tm_min == 15 && !isEveningToggleDone) {
-            if (mainledswState == 0) { mainledswState = 1; isEveningToggleDone = true; }
-        }
-        if (timeinfo.tm_hour == 7 && timeinfo.tm_min == 15 && !isMorningToggleDone) {
-            if (mainledswState == 1) { mainledswState = 0; isMorningToggleDone = true; }
-        }
-        if (!isTimeInRange(19, 15, 7, 15)) { isEveningToggleDone = false; isMorningToggleDone = false; }
+    struct tm ti;
+    if (getLocalTime(&ti)) {
+        if (ti.tm_hour == 19 && ti.tm_min == 15 && !isEveningToggleDone) { mainledswState = 1; isEveningToggleDone = true; }
+        if (ti.tm_hour == 7 && ti.tm_min == 15 && !isMorningToggleDone) { mainledswState = 0; isMorningToggleDone = true; }
+        if (ti.tm_hour != 19 && ti.tm_hour != 7) { isEveningToggleDone = false; isMorningToggleDone = false; }
     }
 
     digitalWrite(MAINLED_PIN, (mainledswState == 1 && masterswState == 1) ? HIGH : LOW);
     controlNightLED();
     digitalWrite(ACTIVITY_LED_PIN, masterswState == 1 ? HIGH : LOW);
-
     yield();
 }
