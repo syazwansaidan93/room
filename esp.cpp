@@ -102,6 +102,7 @@ const char* index_html = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32C3 Control</title>
     <style>
@@ -119,7 +120,7 @@ const char* index_html = R"rawliteral(
 <body>
     <div class="card">
         <h2>Environment</h2>
-        <p>Temp: <span id="temp">--</span>°C</p>
+        <p>Temp: <span id="temp">--</span>&deg;C</p>
         <p>Fan: <span id="fan">--</span> | Main LED: <span id="led">--</span></p>
     </div>
     <div class="card">
@@ -132,8 +133,8 @@ const char* index_html = R"rawliteral(
     </div>
     <div class="card">
         <h2>Settings</h2>
-        <p>On Threshold: <input type="number" step="0.1" id="tOn" onchange="setVal('/set_temp_on?tempOn=', this.value)"> °C</p>
-        <p>Off Threshold: <input type="number" step="0.1" id="tOff" onchange="setVal('/set_temp_off?tempOff=', this.value)"> °C</p>
+        <p>On Threshold: <input type="number" step="0.1" id="tOn" onchange="setVal('/set_temp_on?tempOn=', this.value)"> &deg;C</p>
+        <p>Off Threshold: <input type="number" step="0.1" id="tOff" onchange="setVal('/set_temp_off?tempOff=', this.value)"> &deg;C</p>
         <p>Night LED PWM: <input type="range" min="0" max="255" id="nPwm" oninput="setVal('/set_nightled_pwm?pwmValue=', this.value)"> <span id="pwmVal"></span></p>
     </div>
     <div class="card" id="update-form">
