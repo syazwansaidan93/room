@@ -7,8 +7,6 @@
 #include <Preferences.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #include <HTTPClient.h>
 #include <Update.h>
 
@@ -20,12 +18,6 @@
 #define OVERRIDE_SW_PIN 5
 #define FAN_PIN 6
 #define ACTIVITY_LED_PIN 0
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
-#define OLED_SDA 8
-#define OLED_SCL 9
-#define OLED_ADDR 0x3C
-#define TOUCH_SENSOR_PIN 10
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
 #define LED_CHANNEL 0
@@ -71,23 +63,12 @@ bool isEveningToggleDone = false;
 bool isMorningToggleDone = false;
 bool isNtpSynced = false;
 
-bool isOledActive = false;
-unsigned long oledOnTime = 0;
-const unsigned long oledActiveDuration = 10000;
-bool isTempStatusDisplay = false;
-unsigned long masterSwOledDisplayStartTime = 0;
-const unsigned long masterSwOledDisplayDuration = 5000;
-unsigned long oledErrorDisplayStartTime = 0;
-const unsigned long oledErrorDisplayDuration = 5000;
-
 Preferences preferences;
 WebServer server(80);
 
 const int maxFailedReads = 5;
 int consecutiveFailedReads = 0;
 bool sensorIsFaulty = false;
-
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
 static unsigned long lastScheduledFanToggle = 0;
 static bool scheduledFanActive = false;
@@ -211,11 +192,6 @@ void handleMainToggle() {
 
 void handleMasterToggle() {
     masterswState = 1 - masterswState;
-    masterSwOledDisplayStartTime = millis();
-    if (!isOledActive) {
-        isOledActive = true;
-        display.ssd1306_command(SSD1306_DISPLAYON);
-    }
     addCorsHeaders();
     server.send(200, "text/plain", "Master: " + String(masterswState));
 }
@@ -250,14 +226,8 @@ void handleFanOn30m() {
         fanOverrideStartTime = millis();
         fanIsOnAutomatic = false;
         digitalWrite(FAN_PIN, HIGH);
-        if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-        oledOnTime = millis();
-        isTempStatusDisplay = false;
         addCorsHeaders(); server.send(200);
     } else {
-        oledErrorDisplayStartTime = millis();
-        if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-        oledOnTime = millis();
         addCorsHeaders(); server.send(400);
     }
 }
@@ -335,52 +305,7 @@ void controlNightLED() {
     else ledcWrite(NIGHTLED_PIN, 0);
 }
 
-void updateDisplay() {
-    display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    if (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration) {
-        display.setTextSize(2); display.setCursor(0, 0); display.print("Can't turn");
-        display.setCursor(0, 16); display.print("on fan 30m");
-    }
-    else if (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration) {
-        String masterStateStr = masterswState == 1 ? "SW ON" : "SW OFF";
-        display.setTextSize(3);
-        int16_t x1, y1; uint16_t w, h;
-        display.getTextBounds(masterStateStr, 0, 0, &x1, &y1, &w, &h);
-        display.setCursor((SCREEN_WIDTH - w) / 2, (SCREEN_HEIGHT - h) / 2);
-        display.print(masterStateStr);
-    }
-    else if (fanOverride && !isTempStatusDisplay) {
-        unsigned long elapsed = millis() - fanOverrideStartTime;
-        unsigned long remainingTimeMs = (elapsed < fanOverrideDuration) ? (fanOverrideDuration - elapsed) : 0;
-        long remainingSeconds = remainingTimeMs / 1000;
-        display.setCursor(0, 0); display.setTextSize(1);
-        display.print("FAN OVERRIDE "); display.println(masterswState == 1 ? "(ON)" : "(OFF)");
-        display.setCursor(0, 16); display.setTextSize(2);
-        int m = remainingSeconds / 60; int s = remainingSeconds % 60;
-        if (m < 10) display.print("0"); display.print(m); display.print(":");
-        if (s < 10) display.print("0"); display.print(s);
-    }
-    else {
-        display.setCursor(0, 0); display.setTextSize(1);
-        display.print("WiFi: [");
-        long rssi = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : -100;
-        int bars = map(rssi, -100, -30, 0, 13);
-        for (int i = 0; i < 13; i++) display.print(i < bars ? "=" : " ");
-        display.println("]");
-        display.setCursor(0, 16); display.setTextSize(1); display.print("TEMP:");
-        display.setCursor(40, 16); display.setTextSize(2);
-        display.print(String(currentTemperature, 1)); display.print("C");
-    }
-    display.display();
-}
-
 void setup() {
-    Wire.begin(OLED_SDA, OLED_SCL);
-    if(!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) for(;;);
-    display.clearDisplay(); display.setTextSize(1); display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 0); display.println("Booting..."); display.display();
-
     WiFi.onEvent(onWiFiEvent);
     WiFi.config(staticIP, gateway, subnet);
     WiFi.begin(ssid);
@@ -396,7 +321,7 @@ void setup() {
     pinMode(MAINLED_PIN, OUTPUT); pinMode(NIGHTLED_PIN, OUTPUT);
     pinMode(FAN_PIN, OUTPUT); pinMode(ACTIVITY_LED_PIN, OUTPUT);
     pinMode(MAINLEDSW_PIN, INPUT_PULLUP); pinMode(MASTERSW_PIN, INPUT_PULLUP);
-    pinMode(TOUCH_SENSOR_PIN, INPUT); pinMode(OVERRIDE_SW_PIN, INPUT_PULLUP);
+    pinMode(OVERRIDE_SW_PIN, INPUT_PULLUP);
 
     sensors.begin();
     tempSensorAddress[0] = 0x28; tempSensorAddress[1] = 0x07; tempSensorAddress[2] = 0xBB; tempSensorAddress[3] = 0x83;
@@ -442,7 +367,6 @@ void setup() {
     server.on("/i_temp", HTTP_OPTIONS, handleOptions);
 
     delay(1000);
-    display.ssd1306_command(SSD1306_DISPLAYOFF);
 }
 
 void loop() {
@@ -468,35 +392,6 @@ void loop() {
         }
     }
 
-    if (digitalRead(TOUCH_SENSOR_PIN) == HIGH) {
-        if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-        oledOnTime = millis();
-        masterSwOledDisplayStartTime = 0;
-        oledErrorDisplayStartTime = 0;
-        isTempStatusDisplay = fanOverride ? !isTempStatusDisplay : true;
-    }
-
-    bool isMasterSwDisplayActive = (masterSwOledDisplayStartTime != 0 && (millis() - masterSwOledDisplayStartTime) < masterSwOledDisplayDuration);
-    bool isErrorDisplayActive = (oledErrorDisplayStartTime != 0 && (millis() - oledErrorDisplayStartTime) < oledErrorDisplayDuration);
-
-    if (isMasterSwDisplayActive && !isOledActive) {
-        isOledActive = true;
-        display.ssd1306_command(SSD1306_DISPLAYON);
-    }
-
-    if (isOledActive && !isMasterSwDisplayActive && !fanOverride && !isErrorDisplayActive) {
-        if (millis() - oledOnTime >= oledActiveDuration) {
-            display.clearDisplay(); display.display(); display.ssd1306_command(SSD1306_DISPLAYOFF);
-            isOledActive = false; isTempStatusDisplay = false;
-        }
-    }
-
-    static unsigned long lastDisplayUpdate = 0;
-    if ((isOledActive || isMasterSwDisplayActive || isErrorDisplayActive) && (millis() - lastDisplayUpdate >= 1000)) {
-        updateDisplay();
-        lastDisplayUpdate = millis();
-    }
-
     if (millis() - lastSensorReadTime >= sensorReadInterval && masterswState == 1 && fanIsOnAutomatic) {
         sensors.requestTemperatures();
         float temp = sensors.getTempC(tempSensorAddress);
@@ -511,11 +406,10 @@ void loop() {
     }
 
     if (fanOverride && (millis() - fanOverrideStartTime) >= fanOverrideDuration) {
-        fanOverride = false; fanIsOnAutomatic = true; lastScheduledFanToggle = millis(); scheduledFanActive = false;
-        if (isOledActive && masterSwOledDisplayStartTime == 0) {
-            display.clearDisplay(); display.display(); display.ssd1306_command(SSD1306_DISPLAYOFF);
-            isOledActive = false; isTempStatusDisplay = false;
-        }
+        fanOverride = false; 
+        fanIsOnAutomatic = true; 
+        lastScheduledFanToggle = millis(); 
+        scheduledFanActive = false;
     }
 
     if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
@@ -551,8 +445,7 @@ void loop() {
     if (curRawMast != lastRawMast) { masterswLastDebounceTime = millis(); lastRawMast = curRawMast; }
     if ((millis() - masterswLastDebounceTime) > DEBOUNCE_DELAY) {
         if (curRawMast == LOW && lastStableMast == HIGH) {
-            masterswState = 1 - masterswState; masterSwOledDisplayStartTime = millis();
-            if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
+            masterswState = 1 - masterswState;
             lastStableMast = LOW;
         } else if (curRawMast == HIGH) lastStableMast = HIGH;
     }
@@ -564,15 +457,8 @@ void loop() {
         if (curRawOver == LOW && lastStableOver == HIGH) {
             if (fanOverride) {
                 digitalWrite(FAN_PIN, LOW); fanOverride = false; fanIsOnAutomatic = true;
-                if (isOledActive && masterSwOledDisplayStartTime == 0) { display.clearDisplay(); display.display(); display.ssd1306_command(SSD1306_DISPLAYOFF); isOledActive = false; }
             } else if (masterswState == 1 && fanIsOnAutomatic && digitalRead(FAN_PIN) == LOW) {
                 fanOverride = true; fanOverrideStartTime = millis(); fanIsOnAutomatic = false; digitalWrite(FAN_PIN, HIGH);
-                if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-                oledOnTime = millis();
-            } else {
-                oledErrorDisplayStartTime = millis();
-                if (!isOledActive) { isOledActive = true; display.ssd1306_command(SSD1306_DISPLAYON); }
-                oledOnTime = millis();
             }
             lastStableOver = LOW;
         } else if (curRawOver == HIGH) lastStableOver = HIGH;
