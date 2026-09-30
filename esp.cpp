@@ -18,9 +18,9 @@
 #define OVERRIDE_SW_PIN 5
 #define FAN_PIN 6
 #define ACTIVITY_LED_PIN 0
+
 #define PWM_FREQUENCY 5000
 #define PWM_RESOLUTION 8
-#define LED_CHANNEL 0
 
 const unsigned long DEBOUNCE_DELAY = 50;
 unsigned long mainledswLastDebounceTime = 0;
@@ -37,9 +37,7 @@ const long gmtOffset_sec = 8 * 3600;
 const int daylightOffset_sec = 0;
 
 int mainledswState = 0;
-int lastMainledswReading = HIGH;
 int masterswState = 0;
-int lastMasterswReading = HIGH;
 int nightledPWMValue = 0;
 
 bool nightledTesting = false;
@@ -55,9 +53,11 @@ float tempThresholdOff = 28.7;
 float currentTemperature = 0.0;
 unsigned long lastSensorReadTime = 0;
 const unsigned long sensorReadInterval = 4000;
+
 bool fanOverride = false;
 unsigned long fanOverrideStartTime = 0;
 const unsigned long fanOverrideDuration = 30 * 60 * 1000;
+
 unsigned long lastFanStateChange = 0;
 const unsigned long fanCooldownDelay = 5000;
 bool fanIsOnAutomatic = true;
@@ -178,8 +178,6 @@ void onWiFiEvent(WiFiEvent_t event) {
             isNtpSynced = false;
             serverStarted = false;
             wifiConnecting = false;
-            break;
-        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             wifiConnecting = false;
@@ -441,7 +439,7 @@ void setup() {
     server.on("/on-30m", HTTP_OPTIONS, handleOptions);
     server.on("/off", HTTP_OPTIONS, handleOptions);
     server.on("/set_nightled_pwm", HTTP_OPTIONS, handleOptions);
-    server.on("/test_nightled", HTTP_OPTIONS, handleOptions);
+    server.on("/test_nightled", handleTestNightled);
     server.on("/set_fan_schedule", HTTP_OPTIONS, handleOptions);
     server.on("/set_fan_temp_control", HTTP_OPTIONS, handleOptions);
     server.on("/state", HTTP_OPTIONS, handleOptions);
