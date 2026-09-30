@@ -42,6 +42,10 @@ int masterswState = 0;
 int lastMasterswReading = HIGH;
 int nightledPWMValue = 0;
 
+bool nightledTesting = false;
+unsigned long nightledTestStartTime = 0;
+const unsigned long nightledTestDuration = 5000;
+
 OneWire oneWireBus(DS18B20_PIN);
 DallasTemperature sensors(&oneWireBus);
 DeviceAddress tempSensorAddress;
@@ -72,6 +76,8 @@ bool sensorIsFaulty = false;
 
 static unsigned long lastScheduledFanToggle = 0;
 static bool scheduledFanActive = false;
+bool fanScheduleEnabled = true;
+bool fanTempControlEnabled = true;
 const unsigned long fanScheduleInterval = 15 * 60 * 1000;
 const unsigned long fanScheduleDuration = 1 * 60 * 1000;
 
@@ -93,6 +99,8 @@ const char* index_html = R"rawliteral(
         .btn-blue { background: #007bff; }
         .btn-red { background: #dc3545; }
         .btn-green { background: #28a745; }
+        .btn-purple { background: #6f42c1; }
+        .btn-orange { background: #fd7e14; }
         .status { font-size: 1.2em; color: #00ff00; }
         input[type=number], input[type=range] { padding: 8px; border-radius: 5px; border: 1px solid #444; background: #333; color: white; width: 80px; }
         #update-form { margin-top: 20px; border-top: 1px solid #444; padding-top: 20px; }
@@ -103,6 +111,7 @@ const char* index_html = R"rawliteral(
         <h2>Environment</h2>
         <p>Temp: <span id="temp">--</span>&deg;C</p>
         <p>Fan: <span id="fan">--</span> | Main LED: <span id="led">--</span></p>
+        <p>15m Schedule: <span id="schedStatus">--</span> | Temp Control: <span id="tempCtrlStatus">--</span></p>
     </div>
     <div class="card">
         <h2>Controls</h2>
@@ -111,6 +120,11 @@ const char* index_html = R"rawliteral(
         <br>
         <button class="btn btn-green" onclick="api('/on-30m')">Fan 30M On</button>
         <button class="btn btn-red" onclick="api('/off')">Fan Auto/Off</button>
+        <br>
+        <button class="btn btn-purple" id="schedBtn" onclick="toggleFanSchedule()">Toggle 15m Schedule</button>
+        <button class="btn btn-orange" id="tempCtrlBtn" onclick="toggleFanTempControl()">Toggle Temp Control</button>
+        <br>
+        <button class="btn btn-purple" onclick="api('/test_nightled')">Test Night LED (5s)</button>
     </div>
     <div class="card">
         <h2>Settings</h2>
@@ -126,8 +140,16 @@ const char* index_html = R"rawliteral(
         </form>
     </div>
     <script>
+        let currentSchedState = true;
+        let currentTempCtrlState = true;
         function api(path) { fetch(path).then(r => r.text()).then(t => console.log(t)); }
         function setVal(path, val) { fetch(path + val); if(path.includes('pwm')) document.getElementById('pwmVal').innerText = val; }
+        function toggleFanSchedule() {
+            fetch('/set_fan_schedule?enabled=' + (currentSchedState ? '0' : '1')).then(r => updateState());
+        }
+        function toggleFanTempControl() {
+            fetch('/set_fan_temp_control?enabled=' + (currentTempCtrlState ? '0' : '1')).then(r => updateState());
+        }
         function updateState() {
             fetch('/state').then(r => r.json()).then(s => {
                 document.getElementById('temp').innerText = s.temperature.toFixed(1);
@@ -137,6 +159,10 @@ const char* index_html = R"rawliteral(
                 document.getElementById('tOff').value = s.tempThresholdOff;
                 document.getElementById('nPwm').value = s.nightledPWMValue;
                 document.getElementById('pwmVal').innerText = s.nightledPWMValue;
+                currentSchedState = s.fanScheduleEnabled;
+                currentTempCtrlState = s.fanTempControlEnabled;
+                document.getElementById('schedStatus').innerText = s.fanScheduleEnabled ? "ENABLED" : "DISABLED";
+                document.getElementById('tempCtrlStatus').innerText = s.fanTempControlEnabled ? "ENABLED" : "DISABLED";
             }).catch(e => console.log("State fetch failed"));
         }
         setInterval(updateState, 2000);
@@ -255,6 +281,40 @@ void handleSetNightledPWM() {
     } else { addCorsHeaders(); server.send(400); }
 }
 
+void handleTestNightled() {
+    nightledTesting = true;
+    nightledTestStartTime = millis();
+    addCorsHeaders();
+    server.send(200, "text/plain", "Testing Night LED for 5s");
+}
+
+void handleSetFanSchedule() {
+    if (!server.hasArg("enabled")) { addCorsHeaders(); server.send(400); return; }
+    fanScheduleEnabled = (server.arg("enabled").toInt() == 1);
+    preferences.begin("bilik-config", false);
+    preferences.putBool("fanSched", fanScheduleEnabled);
+    preferences.end();
+    if (!fanScheduleEnabled && scheduledFanActive) {
+        scheduledFanActive = false;
+        digitalWrite(FAN_PIN, LOW);
+    }
+    addCorsHeaders();
+    server.send(200, "text/plain", "Fan Schedule: " + String(fanScheduleEnabled ? "ON" : "OFF"));
+}
+
+void handleSetFanTempControl() {
+    if (!server.hasArg("enabled")) { addCorsHeaders(); server.send(400); return; }
+    fanTempControlEnabled = (server.arg("enabled").toInt() == 1);
+    preferences.begin("bilik-config", false);
+    preferences.putBool("fanTempCtrl", fanTempControlEnabled);
+    preferences.end();
+    if (!fanTempControlEnabled && !scheduledFanActive && !fanOverride) {
+        digitalWrite(FAN_PIN, LOW);
+    }
+    addCorsHeaders();
+    server.send(200, "text/plain", "Fan Temp Control: " + String(fanTempControlEnabled ? "ON" : "OFF"));
+}
+
 bool shouldNightLedBeOn() {
     return isTimeInRange(19, 15, 7, 15) && (mainledswState == 0 || masterswState == 0);
 }
@@ -294,6 +354,9 @@ void handleState() {
     doc["fanOverride"] = fanOverride;
     doc["sensorIsFaulty"] = sensorIsFaulty;
     doc["fanIsOnAutomatic"] = fanIsOnAutomatic;
+    doc["fanScheduleEnabled"] = fanScheduleEnabled;
+    doc["fanTempControlEnabled"] = fanTempControlEnabled;
+    doc["nightledTesting"] = nightledTesting;
     String jsonResponse;
     serializeJson(doc, jsonResponse);
     addCorsHeaders();
@@ -301,6 +364,16 @@ void handleState() {
 }
 
 void controlNightLED() {
+    if (nightledTesting) {
+        if (millis() - nightledTestStartTime < nightledTestDuration) {
+            int testPwm = (nightledPWMValue > 0) ? nightledPWMValue : 255;
+            ledcWrite(NIGHTLED_PIN, testPwm);
+            return;
+        } else {
+            nightledTesting = false;
+        }
+    }
+
     if (shouldNightLedBeOn()) ledcWrite(NIGHTLED_PIN, nightledPWMValue);
     else ledcWrite(NIGHTLED_PIN, 0);
 }
@@ -316,6 +389,8 @@ void setup() {
     tempThresholdOn = preferences.getFloat("tempOn", 28.9);
     tempThresholdOff = preferences.getFloat("tempOff", 28.7);
     nightledPWMValue = preferences.getInt("nightledPWM", 0);
+    fanScheduleEnabled = preferences.getBool("fanSched", true);
+    fanTempControlEnabled = preferences.getBool("fanTempCtrl", true);
     preferences.end();
 
     pinMode(MAINLED_PIN, OUTPUT); pinMode(NIGHTLED_PIN, OUTPUT);
@@ -338,6 +413,9 @@ void setup() {
     server.on("/on-30m", handleFanOn30m);
     server.on("/off", handleFanOff);
     server.on("/set_nightled_pwm", handleSetNightledPWM);
+    server.on("/test_nightled", handleTestNightled);
+    server.on("/set_fan_schedule", handleSetFanSchedule);
+    server.on("/set_fan_temp_control", handleSetFanTempControl);
     server.on("/state", handleState);
     server.on("/i_temp", handleITemp);
 
@@ -363,6 +441,9 @@ void setup() {
     server.on("/on-30m", HTTP_OPTIONS, handleOptions);
     server.on("/off", HTTP_OPTIONS, handleOptions);
     server.on("/set_nightled_pwm", HTTP_OPTIONS, handleOptions);
+    server.on("/test_nightled", HTTP_OPTIONS, handleOptions);
+    server.on("/set_fan_schedule", HTTP_OPTIONS, handleOptions);
+    server.on("/set_fan_temp_control", HTTP_OPTIONS, handleOptions);
     server.on("/state", HTTP_OPTIONS, handleOptions);
     server.on("/i_temp", HTTP_OPTIONS, handleOptions);
 
@@ -412,7 +493,7 @@ void loop() {
         scheduledFanActive = false;
     }
 
-    if (masterswState == 1 && fanIsOnAutomatic && !fanOverride) {
+    if (masterswState == 1 && fanIsOnAutomatic && !fanOverride && fanScheduleEnabled) {
         if (scheduledFanActive) {
             if (millis() - lastScheduledFanToggle >= fanScheduleDuration) {
                 digitalWrite(FAN_PIN, LOW); scheduledFanActive = false;
@@ -425,7 +506,7 @@ void loop() {
     } else scheduledFanActive = false;
 
     if (fanOverride) digitalWrite(FAN_PIN, HIGH);
-    else if (!scheduledFanActive && fanIsOnAutomatic && !sensorIsFaulty) {
+    else if (!scheduledFanActive && fanIsOnAutomatic && !sensorIsFaulty && fanTempControlEnabled) {
         if (masterswState == 1 && millis() - lastFanStateChange >= fanCooldownDelay) {
             if (digitalRead(FAN_PIN) == LOW && currentTemperature >= tempThresholdOn) { digitalWrite(FAN_PIN, HIGH); lastFanStateChange = millis(); }
             else if (digitalRead(FAN_PIN) == HIGH && currentTemperature <= tempThresholdOff) { digitalWrite(FAN_PIN, LOW); lastFanStateChange = millis(); }
@@ -474,5 +555,6 @@ void loop() {
     digitalWrite(MAINLED_PIN, (mainledswState == 1 && masterswState == 1) ? HIGH : LOW);
     controlNightLED();
     digitalWrite(ACTIVITY_LED_PIN, masterswState == 1 ? HIGH : LOW);
-    yield();
+    
+    delay(1);
 }
